@@ -122,9 +122,113 @@ export class OpenCodeClient {
     return this.request(`/session/${id}/prompt_async`, { method: "POST", body });
   }
 
+  children(id) {
+    return this.request(`/session/${id}/children`);
+  }
+
+  todos(id) {
+    return this.request(`/session/${id}/todo`);
+  }
+
+  diff(id, messageID) {
+    return this.request(`/session/${id}/diff`, { query: { messageID } });
+  }
+
+  summarize(id, body) {
+    return this.request(`/session/${id}/summarize`, { method: "POST", body });
+  }
+
+  share(id) {
+    return this.request(`/session/${id}/share`, { method: "POST" });
+  }
+
+  unshare(id) {
+    return this.request(`/session/${id}/share`, { method: "DELETE" });
+  }
+
+  fork(id, messageID) {
+    return this.request(`/session/${id}/fork`, { method: "POST", body: { messageID } });
+  }
+
+  revert(id, messageID, partID) {
+    return this.request(`/session/${id}/revert`, {
+      method: "POST",
+      body: { messageID, partID },
+    });
+  }
+
+  unrevert(id) {
+    return this.request(`/session/${id}/unrevert`, { method: "POST" });
+  }
+
+  runCommand(id, body) {
+    return this.request(`/session/${id}/command`, { method: "POST", body });
+  }
+
+  runShell(id, body) {
+    return this.request(`/session/${id}/shell`, { method: "POST", body });
+  }
+
+  // Permissions / questions (validated: IDs prefixed "per" / "que")
+  replyPermission(id, permissionID, response, remember) {
+    return this.request(`/session/${id}/permissions/${permissionID}`, {
+      method: "POST",
+      body: { response, remember },
+    });
+  }
+
+  replyQuestion(requestID, answers) {
+    return this.request(`/question/${requestID}/reply`, {
+      method: "POST",
+      body: { answers },
+    });
+  }
+
   // ---- Config ----
   config() {
     return this.request("/config");
+  }
+
+  path() {
+    return this.request("/path");
+  }
+
+  vcs() {
+    return this.request("/vcs");
+  }
+
+  project() {
+    return this.request("/project/current");
+  }
+
+  // ---- Files ----
+  listFiles(path) {
+    return this.request("/file", { query: { path } });
+  }
+
+  readFile(path) {
+    return this.request("/file/content", { query: { path } });
+  }
+
+  fileStatus() {
+    return this.request("/file/status");
+  }
+
+  findFiles(query, type) {
+    return this.request("/find/file", { query: { query, type } });
+  }
+
+  // ---- Diagnostics ----
+  lsp() {
+    return this.request("/lsp");
+  }
+
+  mcp() {
+    return this.request("/mcp");
+  }
+
+  toolIds() {
+    return this.request("/experimental/tool/ids");
   }
 
   // Note: official endpoint is /provider (newer) or /config/providers (older).
