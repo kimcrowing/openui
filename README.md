@@ -58,17 +58,37 @@ python3 -m http.server 8000
 
 ## 三、功能
 
-- **会话管理**：新建 / 切换 / 删除会话，左侧列表按更新时间排序
+覆盖官方 opencode web 的接口能力，只改布局风格：
+
+- **会话管理**：新建 / 切换 / 删除 / 重命名 / 分支（fork）/ 分享 / 取消分享 / 摘要
+- **更改历史（diff）**：右侧抽屉实时显示 `FileDiff[]`，按文件分组、
+  带增删统计与逐行 diff；支持「回退到某条消息之前」与「恢复全部」。
+  快捷入口：工具栏图标或 `Ctrl/Cmd+Shift+D`
 - **实时更新**：无密码时用 SSE（`/event`）流式接收；设了密码时自动退化为轮询
   （因为浏览器 `EventSource` 无法携带 Authorization 头）
 - **消息渲染**：Markdown（标题/列表/代码/表格/引用/链接）、代码高亮
 - **工具调用卡片**：可折叠，显示入参与输出，带 pending/running/completed/error 状态
 - **推理过程**：可折叠的「思考过程」块
-- **模型 / 代理选择**：从 `/provider` 与 `/agent` 实时拉取
+- **待办（todo）**：跟随 `todo.updated` 事件实时更新
+- **模型 / 智能体选择**：从 `/provider`（`all` 字段）与 `/agent`（`mode==="primary"`）实时拉取
+- **斜杠命令**：输入 `/` 弹出命令补全，支持上下键选择与 Tab/Enter 执行
+- **权限请求 / 提问**：`permission.updated`、`question.asked` 事件渲染成内联卡片，
+  回复走 `/session/:id/permissions/:id` 与 `/question/:id/reply`
 - **停止生成**：生成中点击可中断
 - **11 套主题**：跟随系统、浅色、深色、Dracula、Nord、One Dark、Material、
   Solarized、GitHub、Catppuccin、翠绿
 - **响应式**：桌面侧栏常驻；≤768px 转为可滑出抽屉 + 遮罩
+
+### 快捷键
+
+| 快捷键 | 作用 |
+| --- | --- |
+| `Enter` | 发送 |
+| `Shift+Enter` | 换行 |
+| `Ctrl/Cmd+K` | 聚焦输入框 |
+| `Ctrl/Cmd+Shift+D` | 打开/关闭更改历史 |
+| `Esc` | 关闭抽屉 / 菜单 |
+| `/` | 触发命令补全 |
 
 ---
 
@@ -105,5 +125,8 @@ python3 -m http.server 8000
 | `GET /provider` | 返回 `{ all, default, connected }`，provider 数组在 **`all`** 里 |
 | `GET /agent` | 用 **`mode: "primary" \| "subagent"`** 区分代理，**没有** `primary` 布尔字段 |
 | `POST /session/:id/message` | `model` 必须是 **对象** `{ providerID, modelID }`，传字符串会 400 |
+| `/question/:id/reply` | 存在（文档未列）；ID 前缀 `que`，POST `{answers:[]}` |
+| `/session/:id/permissions/:perID` | 存在（文档未列）；ID 前缀 `per`，POST `{response}` |
+| `/agent` | 内部 agent（`compaction`/`summary`/`title`）已从下拉中过滤 |
 | `GET /event` | 首个事件为 `server.connected` |
 | 鉴权 | HTTP Basic，用户名默认 `opencode` |
