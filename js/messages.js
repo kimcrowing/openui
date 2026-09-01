@@ -266,6 +266,20 @@ export function buildMessage(info, parts, { compact = false } = {}) {
     t.textContent = timeStr(info.time.created);
     meta.appendChild(t);
   }
+
+  // Revert affordance (official opencode web has per-message revert)
+  if (role === "user" && !compact) {
+    const rv = document.createElement("button");
+    rv.className = "msg-action";
+    rv.title = "回退到这条消息之前";
+    rv.textContent = "回退";
+    rv.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (window.__revertToMessage) window.__revertToMessage(info.id);
+    });
+    meta.appendChild(rv);
+  }
+
   body.appendChild(meta);
 
   // Error banner
