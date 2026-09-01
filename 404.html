@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Redirecting…</title>
+    <script>
+      // GitHub Pages SPA fallback: serve index.html for client-side routing.
+      var path = location.pathname.replace(/\/+$/, "");
+      if (path && path !== "/404.html") {
+        var base = document.querySelector("base") ? base.getAttribute("href") : "";
+        location.replace(base || "/index.html" + path + location.search);
+      } else {
+        location.replace("/index.html");
+      }
+    </script>
+  </head>
+  <body>
+    <p>Redirecting to the app…</p>
+  </body>
+</html>

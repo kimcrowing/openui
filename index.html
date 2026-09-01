@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="system">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#6366f1" />
+    <meta
+      name="description"
+      content="OpenCode Web — 现代化、响应式的 OpenCode 网页前端，支持多种配色主题与多端适配。"
+    />
+    <title>OpenCode Web</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Crect%20width='100'%20height='100'%20rx='24'%20fill='%236366f1'/%3E%3Ctext%20x='50'%20y='68'%20font-size='56'%20text-anchor='middle'%20fill='white'%20font-family='sans-serif'%20font-weight='bold'%3EO%3C/text%3E%3C/svg%3E" />
+    <!-- Apply saved theme before paint to avoid flash -->
+    <script>
+      (function () {
+        var t = null;
+        try {
+          t = localStorage.getItem("opencode-web.theme");
+        } catch (e) {}
+        if (!t) t = "system";
+        document.documentElement.setAttribute("data-theme", t);
+      })();
+    </script>
+    <link rel="stylesheet" href="css/themes.css" />
+    <link rel="stylesheet" href="css/base.css" />
+    <link rel="stylesheet" href="css/app.css" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- ======== Sidebar ======== -->
+      <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+
+      <aside id="sidebar">
+        <div class="sidebar-header">
+          <div class="logo">O</div>
+          <div class="title">OpenCode</div>
+          <button class="icon-btn" id="btn-close-sidebar" title="收起" aria-label="收起侧栏">
+            &#x2715;
+          </button>
+        </div>
+
+        <button class="new-session" id="btn-new-session" title="新建会话">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 5v14M5 12h14" stroke-linecap="round" />
+          </svg>
+          <span>新建会话</span>
+        </button>
+
+        <div class="session-list" id="session-list"></div>
+
+        <div class="sidebar-footer">
+          <div class="server-status">
+            <span id="server-pill" class="pill offline"><span class="led"></span><span>未连接</span></span>
+          </div>
+          <button class="btn btn-ghost" id="btn-settings" style="width: 100%">
+            ⚙ 服务器设置
+          </button>
+        </div>
+      </aside>
+
+      <!-- ======== Main ======== -->
+      <main id="main">
+        <header id="topbar">
+          <button class="icon-btn menu-btn" id="btn-open-sidebar" aria-label="打开侧栏">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 6h18M3 12h18M3 18h18" stroke-linecap="round" />
+            </svg>
+          </button>
+          <div class="topbar-title" id="topbar-title">欢迎使用 OpenCode</div>
+          <div class="topbar-actions">
+            <div class="select-wrap model">
+              <select id="model-select" title="模型">
+                <option value="">模型…</option>
+              </select>
+            </div>
+            <button class="icon-btn" id="btn-theme" title="切换主题" aria-label="主题">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="4" />
+                <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" stroke-linecap="round" />
+              </svg>
+            </button>
+          </div>
+        </header>
+
+        <div id="messages">
+          <div id="messages-inner"></div>
+
+          <!-- Empty state -->
+          <div id="empty-state">
+            <div class="big-logo">O</div>
+            <h2>OpenCode Web</h2>
+            <p class="hint">
+              连接到一个正在运行的 <code>opencode serve</code> 服务即可开始对话。
+              <br />
+              服务器需以允许本站来源的 <code>--cors</code> 启动。
+            </p>
+            <span id="empty-connect-warn" class="connect-warn hidden">尚未连接到服务器</span>
+            <button class="btn btn-primary" id="btn-empty-settings">配置服务器</button>
+          </div>
+        </div>
+
+        <!-- Composer -->
+        <div id="composer-wrap">
+          <div id="composer">
+            <div class="composer-row">
+              <textarea
+                id="input"
+                rows="1"
+                placeholder="给 OpenCode 发送消息…"
+                aria-label="消息输入"
+              ></textarea>
+              <button class="send-btn" id="send-btn" title="发送 (Enter)" aria-label="发送">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M3.4 20.4l17.4-7.5c.8-.4.8-1.5 0-1.9L3.4 3.6c-.7-.3-1.4.3-1.4 1.1v5.4c0 .6.4 1.1.9 1.2l10 1.7-10 1.7c-.5.1-.9.6-.9 1.2v5.4c0 .9.7 1.4 1.4 1.1z" />
+                </svg>
+              </button>
+            </div>
+            <div class="composer-tools">
+              <div class="select-wrap">
+                <select id="agent-select" title="代理">
+                  <option value="">默认代理</option>
+                </select>
+              </div>
+              <span style="flex:1"></span>
+              <span class="muted" style="font-size:11px" id="composer-hint">Enter 发送 · Shift+Enter 换行</span>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <!-- ======== Settings modal ======== -->
+    <div id="overlay">
+      <div class="modal" id="settings-modal">
+        <div class="modal-header">
+          <h3>服务器设置</h3>
+          <button class="icon-btn" id="btn-close-settings" aria-label="关闭">&#x2715;</button>
+        </div>
+        <div class="modal-body">
+          <div class="field">
+            <label for="cfg-baseurl">服务器地址 (URL)</label>
+            <input id="cfg-baseurl" type="url" placeholder="http://127.0.0.1:4096" spellcheck="false" />
+            <div class="help">
+              需为 <code>opencode serve</code> 的地址，例如 <code>http://127.0.0.1:4096</code>。
+              若服务开启了密码保护，请在下方填写凭据。
+            </div>
+          </div>
+          <div class="field">
+            <label for="cfg-username">用户名</label>
+            <input id="cfg-username" type="text" placeholder="opencode" spellcheck="false" />
+            <div class="help">默认 <code>opencode</code>（或服务端设置的 <code>OPENCODE_SERVER_USERNAME</code>）。</div>
+          </div>
+          <div class="field">
+            <label for="cfg-password">密码</label>
+            <input id="cfg-password" type="password" placeholder="留空则不需要鉴权" />
+            <div class="help">对应服务端的 <code>OPENCODE_SERVER_PASSWORD</code>，留空表示无需鉴权。</div>
+          </div>
+          <div class="modal-actions">
+            <button class="btn btn-ghost" id="btn-cancel-settings">取消</button>
+            <button class="btn btn-primary" id="btn-save-settings">保存并连接</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Theme modal -->
+      <div class="modal hidden" id="theme-modal">
+        <div class="modal-header">
+          <h3>选择主题</h3>
+          <button class="icon-btn" id="btn-close-theme" aria-label="关闭">&#x2715;</button>
+        </div>
+        <div class="modal-body">
+          <div class="theme-grid" id="theme-grid"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast"></div>
+
+    <script type="module" src="js/app.js"></script>
+  </body>
+</html>
