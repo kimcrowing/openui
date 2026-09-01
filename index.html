@@ -69,11 +69,18 @@
           </button>
           <div class="topbar-title" id="topbar-title">欢迎使用 OpenCode</div>
           <div class="topbar-actions">
-            <div class="select-wrap model">
-              <select id="model-select" title="模型">
-                <option value="">模型…</option>
-              </select>
-            </div>
+            <button class="icon-btn" id="btn-changes" title="更改历史 (Ctrl+Shift+D)" aria-label="更改历史">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 3v12M12 3l-4 4M12 3l4 4" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M4 15v4a2 2 0 002 2h12a2 2 0 002-2v-4" stroke-linecap="round" />
+              </svg>
+              <span class="badge-count hidden" id="changes-count">0</span>
+            </button>
+            <button class="icon-btn" id="btn-session-menu" title="会话操作" aria-label="会话操作">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                <circle cx="12" cy="5" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="12" cy="19" r="1.8" />
+              </svg>
+            </button>
             <button class="icon-btn" id="btn-theme" title="切换主题" aria-label="主题">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="12" cy="12" r="4" />
@@ -101,7 +108,34 @@
         </div>
 
         <!-- Composer -->
+        <div id="pending-prompts"></div>
+        <div id="todo-box" class="todo-box hidden" style="margin:0 18px 6px;max-width:780px"></div>
+
+        <!-- Changes / diff drawer -->
+        <aside id="changes-panel" class="drawer">
+          <div class="drawer-header">
+            <h3>更改历史</h3>
+            <span class="muted" id="changes-summary" style="font-size:11px"></span>
+            <span style="flex:1"></span>
+            <button class="btn btn-ghost" id="btn-unrevert" style="padding:4px 10px;font-size:12px">恢复全部</button>
+            <button class="icon-btn" id="btn-close-changes" aria-label="关闭">&#x2715;</button>
+          </div>
+          <div id="changes-body" class="drawer-body"></div>
+        </aside>
+
+        <!-- Session actions menu -->
+        <div id="session-menu" class="menu-pop hidden">
+          <button class="menu-item" id="mi-rename">重命名会话</button>
+          <button class="menu-item" id="mi-fork">从此处分支</button>
+          <button class="menu-item" id="mi-summarize">生成摘要</button>
+          <button class="menu-item" id="mi-share">分享会话</button>
+          <button class="menu-item" id="mi-unshare">取消分享</button>
+          <div class="menu-sep"></div>
+          <button class="menu-item danger" id="mi-delete">删除会话</button>
+        </div>
+
         <div id="composer-wrap">
+          <div id="cmd-pop" class="cmd-pop hidden"></div>
           <div id="composer">
             <div class="composer-row">
               <textarea
@@ -118,8 +152,13 @@
             </div>
             <div class="composer-tools">
               <div class="select-wrap">
-                <select id="agent-select" title="代理">
-                  <option value="">默认代理</option>
+                <select id="model-select" title="模型">
+                  <option value="">默认模型</option>
+                </select>
+              </div>
+              <div class="select-wrap">
+                <select id="agent-select" title="智能体">
+                  <option value="">默认智能体</option>
                 </select>
               </div>
               <span style="flex:1"></span>
