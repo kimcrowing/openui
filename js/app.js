@@ -385,6 +385,7 @@ function updateStreamingText(part, delta) {
 async function refreshAll() {
   await Promise.all([
     refreshSessions(),
+    refreshProjects(),
     refreshProviders(),
     refreshAgents(),
     refreshCommands(),
@@ -406,11 +407,148 @@ async function refreshAll() {
 async function refreshSessions() {
   if (!client) return;
   try {
-    const list = await client.listSessions();
-    setState({ sessions: list });
+    const st = getState();
+    const dirs = new Set();
+    for (const p of st.projects || []) {
+      if (p && p.worktree && p.worktree !== "/") dirs.add(p.worktree);
+    }
+    for (const lp of st.localProjects || []) {
+      if (lp && lp.directory) dirs.add(lp.directory);
+    }
+    if (st.activeProject && st.activeProject.directory) {
+      dirs.add(st.activeProject.directory);
+    }
+    const seen = new Set();
+    const all = [];
+    const push = (list) => {
+      for (const s of list) {
+        if (!seen.has(s.id)) {
+          seen.add(s.id);
+          all.push(s);
+        }
+      }
+    };
+    // Default (unscoped) scope covers the server's global project.
+    try {
+      push(await client.listSessions());
+    } catch (e) {
+      /* ignore */
+    }
+    if (dirs.size) {
+      for (const d of dirs) {
+        try {
+          push(await client.listSessions(d));
+        } catch (e) {
+          /* a project may be unreachable; try the others */
+        }
+      }
+    }
+    setState({ sessions: all });
   } catch (e) {
     setState({ connected: false });
   }
+}
+
+async function refreshProjects() {
+  if (!client) return;
+  try {
+    const projects = await client.listProjects();
+    setState({ projects: projects || [] });
+  } catch (e) {
+    /* project list is optional; non-fatal */
+  }
+}
+
+// A project key is stable across scoping: prefer the worktree project id,
+// else fall back to the directory path used to scope it.
+function projectKeyOf(p) {
+  return p && p.id ? `p:${p.id}` : p && p.directory ? `d:${p.directory}` : "d:default";
+}
+
+function projectDirOf(p) {
+  return (p && (p.worktree || p.directory)) || "";
+}
+
+function projectNameOf(p) {
+  if (p && p.name) return p.name;
+  const dir = p && (p.worktree || p.directory || "");
+  if (!dir) return "默认项目";
+  const parts = dir.split(/[\\/]/).filter(Boolean);
+  return parts[parts.length - 1] || dir;
+}
+
+async function selectProject(p) {
+  if (!client) return;
+  const key = projectKeyOf(p);
+  const st = getState();
+  const same = st.activeProject && projectKeyOf(st.activeProject) === key;
+  const dir = projectDirOf(p);
+  client.setProject(same ? undefined : dir || undefined);
+  setState({
+    activeProject: same
+      ? null
+      : { key, name: projectNameOf(p), directory: dir },
+  });
+  render(getState());
+}
+
+function toggleProject(key) {
+  const st = getState();
+  const next = { ...st.projCollapsed };
+  next[key] = !next[key];
+  setState({ projCollapsed: next });
+}
+
+/* --------------------------------------------------------------------------
+ * Projects (user-defined, persisted locally)
+ * -------------------------------------------------------------------------- */
+
+const KEY_LOCALPROJECTS = "opencode-web.projects";
+
+function loadLocalProjects() {
+  try {
+    const v = JSON.parse(localStorage.getItem(KEY_LOCALPROJECTS) || "[]");
+    return Array.isArray(v) ? v : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalProjects(list) {
+  try {
+    localStorage.setItem(KEY_LOCALPROJECTS, JSON.stringify(list));
+  } catch {
+    /* ignore */
+  }
+}
+
+async function createProjectFromForm() {
+  const dir = ($("np-dir").value || "").trim();
+  if (!dir) {
+    $("np-dir").focus();
+    return;
+  }
+  const name = ($("np-name").value || "").trim() || basenameOf(dir);
+  const p = { key: projectKeyOf({ directory: dir }), name, directory: dir };
+  // Persist a local catalog entry (works for directories the server has not
+  // opened yet; creating a session there will register it server-side).
+  const local = loadLocalProjects();
+  if (!local.some((x) => x.directory === dir)) {
+    local.push({ name, directory: dir });
+    saveLocalProjects(local);
+  }
+  $("new-project-form").hidden = true;
+  $("np-name").value = "";
+  $("np-dir").value = "";
+  // Use the directory as the active project; subsequent 新建会话 will target it.
+  client.setProject(dir);
+  setState({ activeProject: p });
+  render(getState());
+}
+
+function basenameOf(dir) {
+  const parts = (dir || "").split(/[\\/]/).filter(Boolean);
+  return parts[parts.length - 1] || dir || "";
 }
 
 async function refreshProviders() {
@@ -454,7 +592,9 @@ async function refreshAgents() {
 
 async function newSession() {
   if (!client) return;
-  const s = await client.createSession();
+  const st = getState();
+  const dir = st.activeProject ? st.activeProject.directory : undefined;
+  const s = await client.createSession(undefined, undefined, dir);
   setState({ currentSessionId: s.id, messages: [], busy: false });
   closeSidebarOnMobile();
   markMessagesDirty();
@@ -1443,6 +1583,26 @@ function bindEvents() {
   $("btn-open-sidebar").addEventListener("click", () => setState({ sidebarOpen: true }));
   $("sidebar-backdrop").addEventListener("click", () => setState({ sidebarOpen: false }));
 
+  // New project
+  const npForm = $("new-project-form");
+  const npDir = $("np-dir");
+  $("btn-new-project").addEventListener("click", () => {
+    npForm.hidden = !npForm.hidden;
+    if (!npForm.hidden) npDir.focus();
+  });
+  $("np-cancel").addEventListener("click", () => {
+    npForm.hidden = true;
+    $("np-name").value = "";
+    npDir.value = "";
+  });
+  $("np-ok").addEventListener("click", createProjectFromForm);
+  npDir.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") createProjectFromForm();
+  });
+  $("np-name").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") createProjectFromForm();
+  });
+
   // Composer
   const input = $("input");
   input.addEventListener("input", () => {
@@ -1531,6 +1691,18 @@ function bindEvents() {
   setActions({
     onSelectSession: selectSession,
     onDeleteSession: deleteSession,
+    onSelectProject: selectProject,
+    onToggleProject: toggleProject,
+    onNewSessionInProject: async (directory) => {
+      if (!client) return;
+      const s = await client.createSession(undefined, undefined, directory);
+      setState({ currentSessionId: s.id, messages: [], busy: false });
+      closeSidebarOnMobile();
+      markMessagesDirty();
+      await refreshSessions();
+      render(getState());
+      $("input").focus();
+    },
     onPickTheme: (id) => {
       setTheme(id);
       setState({ theme: id });
@@ -1593,10 +1765,23 @@ function init() {
     servers: loaded.servers,
     activeServerId: loaded.activeServerId,
     config: activeConfig(),
+    localProjects: loadLocalProjects(),
   });
   setActions({
     onSelectSession: selectSession,
     onDeleteSession: deleteSession,
+    onSelectProject: selectProject,
+    onToggleProject: toggleProject,
+    onNewSessionInProject: async (directory) => {
+      if (!client) return;
+      const s = await client.createSession(undefined, undefined, directory);
+      setState({ currentSessionId: s.id, messages: [], busy: false });
+      closeSidebarOnMobile();
+      markMessagesDirty();
+      await refreshSessions();
+      render(getState());
+      $("input").focus();
+    },
   });
   bindEvents();
   renderThemeGrid();
@@ -1606,13 +1791,6 @@ function init() {
     const s = getState();
     document.getElementById("sidebar").classList.toggle("open", s.sidebarOpen);
     document.getElementById("sidebar-backdrop").classList.toggle("open", s.sidebarOpen);
-    const pill = document.getElementById("server-pill");
-    if (pill) {
-      pill.className = s.connected ? "pill online" : "pill offline";
-      pill.lastChild.textContent = s.connected
-        ? `已连接${s.health && s.health.version ? ` · v${s.health.version}` : ""}`
-        : "未连接";
-    }
     renderSrvDot(s.connected);
   });
 

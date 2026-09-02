@@ -22,6 +22,10 @@ const state = {
   themeModalOpen: false,
   servers: [],           // [{ id, name, baseUrl, username, password }]
   activeServerId: null,
+  projects: [],          // Project[] from /project (worktree projects)
+  localProjects: [],     // [{ name, directory }] user-defined projects (persisted)
+  activeProject: null,   // { key, name, directory } — the project new sessions are created in
+  projCollapsed: {},     // project key -> bool (folded group header)
   todoCollapsed: {},      // sessionId -> bool
   config: {
     baseUrl: "",

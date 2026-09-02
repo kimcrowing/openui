@@ -50,8 +50,20 @@
         <div class="session-list" id="session-list"></div>
 
         <div class="sidebar-footer">
-          <div class="server-status">
-            <span id="server-pill" class="pill offline"><span class="led"></span><span>未连接</span></span>
+          <button class="new-project" id="btn-new-project" title="新建项目（在服务器上指定一个目录）">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" stroke-linecap="round" stroke-linejoin="round" />
+              <path d="M12 11v4M10 13h4" stroke-linecap="round" />
+            </svg>
+            <span>新建项目</span>
+          </button>
+          <div class="new-project-form" id="new-project-form" hidden>
+            <input id="np-name" type="text" placeholder="项目名称（可选）" autocomplete="off" />
+            <input id="np-dir" type="text" placeholder="服务器上的目录路径，必填" autocomplete="off" />
+            <div class="np-acts">
+              <button class="btn-mini" id="np-ok">创建</button>
+              <button class="btn-mini ghost" id="np-cancel">取消</button>
+            </div>
           </div>
         </div>
       </aside>

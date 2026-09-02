@@ -32,10 +32,15 @@ export class OpenCodeClient {
     if (this.useAuth) {
       h["Authorization"] = `Basic ${this.token}`;
     }
+    // Scope requests to a specific project directory when set. The opencode
+    // server itself decides project scope from this header (native behavior).
+    if (this.directory) {
+      h["x-opencode-directory"] = this.directory;
+    }
     return h;
   }
 
-  async request(path, { method = "GET", body, query } = {}) {
+  async request(path, { method = "GET", body, query, directory } = {}) {
     let url = this.url(path);
     if (query) {
       const qs = Object.entries(query)
@@ -45,9 +50,12 @@ export class OpenCodeClient {
       if (qs) url += `?${qs}`;
     }
 
+    const headers = this.headers();
+    if (directory) headers["x-opencode-directory"] = directory;
+
     const res = await fetch(url, {
       method,
-      headers: this.headers(),
+      headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
       signal: AbortSignal.timeout(15000),
     });
@@ -83,15 +91,26 @@ export class OpenCodeClient {
   }
 
   // ---- Sessions ----
-  listSessions() {
-    return this.request("/session");
+  listSessions(directory) {
+    return this.request("/session", { directory });
   }
 
-  createSession(parentID, title) {
+  createSession(parentID, title, directory) {
     return this.request("/session", {
       method: "POST",
       body: { parentID, title },
+      directory,
     });
+  }
+
+  // Switch project scope: afterwards /session and new sessions belong to the
+  // directory (project) given. Pass undefined/null to go back to server default.
+  setProject(directory) {
+    this.directory = directory || undefined;
+  }
+
+  listProjects() {
+    return this.request("/project");
   }
 
   getSession(id) {

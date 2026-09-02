@@ -24,22 +24,33 @@ function renderTopbar(state) {
   const title = $("topbar-title");
   const current = state.sessions.find((s) => s.id === state.currentSessionId);
   title.textContent = current && current.title ? current.title : "欢迎使用 OpenCode";
-
-  const pill = $("server-pill");
-  pill.className = state.connected ? "pill online" : "pill offline";
-  pill.querySelector(".led");
-  pill.lastChild.textContent = state.connected
-    ? `已连接${state.health && state.health.version ? ` · v${state.health.version}` : ""}`
-    : "未连接";
 }
 
-/* ---------- Session list ---------- */
+/* ---------- Session list (grouped by project) ---------- */
+
+function projectDirForSession(s) {
+  return (s && s.directory) || "";
+}
+
+function projectNameForSession(s, state) {
+  const pid = s && s.projectID;
+  const proj = pid && (state.projects || []).find((p) => p.id === pid);
+  if (proj && proj.worktree && proj.worktree !== "/") {
+    const parts = proj.worktree.split(/[\\/]/).filter(Boolean);
+    return parts[parts.length - 1] || proj.worktree;
+  }
+  const dir = projectDirForSession(s);
+  const parts = dir.split(/[\\/]/).filter(Boolean);
+  return parts[parts.length - 1] || "默认项目";
+}
 
 function renderSessions(state) {
   const key = state.sessions
-    .map((s) => `${s.id}|${s.title}|${s.time?.updated}`)
+    .map((s) => `${s.id}|${s.title}|${s.time?.updated}|${projectNameForSession(s, state)}`)
     .join("\u0001");
-  const busyKey = `${state.currentSessionId}:${state.busy}`;
+  const msgsKey = state.messages.length;
+  const projKey = state.activeProject ? `${state.activeProject.key}:${state.activeProject.name}` : "";
+  const busyKey = `${state.currentSessionId}:${state.busy}:${msgsKey}:${projKey}:${JSON.stringify(state.projCollapsed)}`;
   if (key === lastSessionsKey && busyKey === lastBusy) return;
 
   lastSessionsKey = key;
@@ -57,39 +68,119 @@ function renderSessions(state) {
     return;
   }
 
-  // Sort: busy current first, then by updated desc
-  const sorted = [...state.sessions].sort((a, b) => {
-    if (a.id === state.currentSessionId) return -1;
-    if (b.id === state.currentSessionId) return 1;
-    return (b.time?.updated || 0) - (a.time?.updated || 0);
+  // Group sessions by project. Keyed by session.directory/projectID and
+  // named from the /project worktree info when available.
+  const groups = new Map();
+  for (const s of state.sessions) {
+    const pid = s.projectID || "";
+    const dir = projectDirForSession(s);
+    const proj = pid && (state.projects || []).find((p) => p.id === pid);
+    const key = pid || dir;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        name: projectNameForSession(s, state),
+        directory: dir,
+        worktree: proj && proj.worktree ? proj.worktree : dir,
+        sessions: [],
+      });
+    }
+    groups.get(key).sessions.push(s);
+  }
+
+  // Projects order: active project first, then by newest session.
+  const sortedGroups = [...groups.values()].sort((a, b) => {
+    const amax = Math.max(...a.sessions.map((s) => s.time?.updated || 0));
+    const bmax = Math.max(...b.sessions.map((s) => s.time?.updated || 0));
+    return bmax - amax;
   });
 
-  for (const s of sorted) {
-    const item = document.createElement("div");
-    item.className = "session-item" + (s.id === state.currentSessionId ? " active" : "");
-    item.dataset.id = s.id;
+  for (const g of sortedGroups) {
+    const gkey = g.worktree || g.directory || "d:default";
+    const isActive = state.activeProject && state.activeProject.directory === g.worktree;
+    const gid = `proj-${gkey.replace(/\W+/g, "_")}`;
 
-    const dot = document.createElement("span");
-    dot.className = "dot" + (s.id === state.currentSessionId && state.busy ? " busy" : "");
-    item.appendChild(dot);
+    // Group header
+    const head = document.createElement("div");
+    head.className = "proj-head" + (isActive ? " active" : "");
+    head.dataset.gid = gid;
 
-    const title = document.createElement("span");
-    title.className = "s-title";
-    title.textContent = s.title || "未命名会话";
-    item.appendChild(title);
-
-    const del = document.createElement("button");
-    del.className = "icon-btn del";
-    del.title = "删除会话";
-    del.innerHTML = "&#128465;";
-    del.addEventListener("click", (e) => {
+    const chev = document.createElement("span");
+    chev.className = "chev" + (state.projCollapsed[gkey] ? " collapsed" : "");
+    chev.textContent = "\u25BC";
+    chev.addEventListener("click", (e) => {
       e.stopPropagation();
-      onDeleteSession(s.id);
+      onToggleProject(gkey);
     });
-    item.appendChild(del);
+    head.appendChild(chev);
 
-    item.addEventListener("click", () => onSelectSession(s.id));
-    list.appendChild(item);
+    const lead = document.createElement("span");
+    lead.className = "proj-led";
+    lead.title = "当前项目（新建会话将创建于此）";
+    if (isActive) lead.classList.add("active");
+    head.appendChild(lead);
+
+    const nm = document.createElement("span");
+    nm.className = "proj-name";
+    nm.textContent = g.name;
+    nm.title = g.directory || g.worktree || "";
+    head.appendChild(nm);
+
+    const cnt = document.createElement("span");
+    cnt.className = "proj-count";
+    cnt.textContent = g.sessions.length;
+    head.appendChild(cnt);
+
+    const add = document.createElement("button");
+    add.className = "icon-btn proj-add";
+    add.title = "在该项目中新建会话";
+    add.innerHTML = "&#43;";
+    add.addEventListener("click", (e) => {
+      e.stopPropagation();
+      onSelectProject({ key: gkey, name: g.name, directory: g.worktree || g.directory });
+      onNewSessionInProject(g.worktree || g.directory);
+    });
+    head.appendChild(add);
+
+    head.addEventListener("click", () => {
+      onSelectProject({ key: gkey, name: g.name, directory: g.worktree || g.directory });
+    });
+    list.appendChild(head);
+
+    // Sessions inside the group (collapsible)
+    if (!state.projCollapsed[gkey]) {
+      const sorted = [...g.sessions].sort((a, b) => {
+        if (a.id === state.currentSessionId) return -1;
+        if (b.id === state.currentSessionId) return 1;
+        return (b.time?.updated || 0) - (a.time?.updated || 0);
+      });
+      for (const s of sorted) {
+        const item = document.createElement("div");
+        item.className = "session-item" + (s.id === state.currentSessionId ? " active" : "");
+        item.dataset.id = s.id;
+
+        const dot = document.createElement("span");
+        dot.className = "dot" + (s.id === state.currentSessionId && state.busy ? " busy" : "");
+        item.appendChild(dot);
+
+        const title = document.createElement("span");
+        title.className = "s-title";
+        title.textContent = s.title || "未命名会话";
+        item.appendChild(title);
+
+        const del = document.createElement("button");
+        del.className = "icon-btn del";
+        del.title = "删除会话";
+        del.innerHTML = "&#128465;";
+        del.addEventListener("click", (e) => {
+          e.stopPropagation();
+          onDeleteSession(s.id);
+        });
+        item.appendChild(del);
+
+        item.addEventListener("click", () => onSelectSession(s.id));
+        list.appendChild(item);
+      }
+    }
   }
 }
 
@@ -174,6 +265,15 @@ function onSelectSession(id) {
 }
 function onDeleteSession(id) {
   if (actions.onDeleteSession) actions.onDeleteSession(id);
+}
+function onSelectProject(p) {
+  if (actions.onSelectProject) actions.onSelectProject(p);
+}
+function onToggleProject(key) {
+  if (actions.onToggleProject) actions.onToggleProject(key);
+}
+function onNewSessionInProject(directory) {
+  if (actions.onNewSessionInProject) actions.onNewSessionInProject(directory);
 }
 
 export function scrollBottom() {
