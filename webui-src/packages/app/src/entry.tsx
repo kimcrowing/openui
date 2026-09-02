@@ -98,14 +98,15 @@ if (!(root instanceof HTMLElement) && import.meta.env.DEV) {
 }
 
 // Sub-path deployments (e.g. GitHub Pages at /openui/) serve static assets only and
-// have no same-origin backend, so location.origin must never be treated as the server.
+// have no same-origin backend; the static origin must never be treated as the server.
+// VITE_DEFAULT_SERVER_URL (set at build time) points web visitors at the real backend.
 const isSubPathDeployment = () => import.meta.env.BASE_URL !== "/"
 
 const getCurrentUrl = () => {
   if (location.hostname.includes("opencode.ai")) return "http://localhost:4096"
   if (import.meta.env.DEV)
     return `http://${import.meta.env.VITE_OPENCODE_SERVER_HOST ?? "localhost"}:${import.meta.env.VITE_OPENCODE_SERVER_PORT ?? "4096"}`
-  if (isSubPathDeployment()) return ""
+  if (isSubPathDeployment()) return import.meta.env.VITE_DEFAULT_SERVER_URL ?? ""
   return location.origin
 }
 

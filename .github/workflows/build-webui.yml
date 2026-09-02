@@ -30,6 +30,7 @@ permissions:
 env:
   OPENCODE_VERSION: ${{ github.event.inputs.opencode_version || '1.18.25' }}
   VITE_BASE: '/openui/'
+  VITE_DEFAULT_SERVER_URL: 'https://kimcrowing.dynv6.net:14096'
 
 jobs:
   build:
