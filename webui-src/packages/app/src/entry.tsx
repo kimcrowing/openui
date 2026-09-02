@@ -10,6 +10,7 @@ import { dict as en } from "@/i18n/en"
 import { dict as zh } from "@/i18n/zh"
 import { authFromToken } from "@/utils/server"
 import pkg from "../package.json"
+import { PrefixedRouterRoot } from "@/router/prefixed-router"
 import { ServerConnection } from "./context/server"
 
 const DEFAULT_SERVER_URL_KEY = "opencode.settings.dat:defaultServerUrl"
@@ -170,6 +171,7 @@ if (root instanceof HTMLElement) {
               canonicalLocalServer={ServerConnection.key(server)}
               servers={[server]}
               disableHealthCheck
+              router={PrefixedRouterRoot}
             />
           </AppBaseProviders>
         </PlatformProvider>
