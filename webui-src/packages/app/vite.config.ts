@@ -31,6 +31,11 @@ export default defineConfig({
   },
   build: {
     target: "esnext",
-    sourcemap: true,
+    // Static subpath deployment (Pages) has no local file access for maps;
+    // disabling sourcemaps cuts payload and parse time. Set SENTRY_* or
+    // vendored `.map` files are not needed for pure-static hosting.
+    sourcemap: false,
+    cssCodeSplit: true,
+    minify: "esbuild",
   },
 })

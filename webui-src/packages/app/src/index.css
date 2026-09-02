@@ -8,6 +8,7 @@
   src: url("/assets/JetBrainsMonoNerdFontMono-Regular.woff2") format("woff2");
   font-weight: normal;
   font-style: normal;
+  font-display: swap;
 }
 
 @font-face {
@@ -15,6 +16,7 @@
   src: url("/assets/Inter.ttf") format("truetype");
   font-weight: 100 900;
   font-style: normal;
+  font-display: swap;
 }
 
 @media (display-mode: standalone) {
@@ -325,6 +327,47 @@
       animation: home-projects-fade-top linear both;
       animation-timeline: --manage-models-scroll;
       animation-range: 0 0.1px;
+    }
+  }
+}
+
+@layer base {
+  /* Local display/rendering refinements (no layout changes). */
+  html {
+    /* crisp text on high-DPI / OLED, no layout impact */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    /* finer baseline control so zoomed UI keeps consistent metrics */
+    font-variant-ligatures: common-ligatures;
+  }
+
+  html,
+  body {
+    /* contain paint: keep scrolling/text selection composited */
+    overscroll-behavior-y: contain;
+  }
+
+  /* fast tap feedback, no delayed flash of blue/grey highlight on Android */
+  a,
+  button,
+  [role="button"],
+  [data-component="dropdown-menu-item"],
+  [data-component="dropdown-menu-trigger"] {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--v2-background-bg-accent, #7c86f5) 28%, transparent);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
     }
   }
 }
