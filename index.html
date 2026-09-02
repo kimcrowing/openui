@@ -53,9 +53,6 @@
           <div class="server-status">
             <span id="server-pill" class="pill offline"><span class="led"></span><span>未连接</span></span>
           </div>
-          <button class="btn btn-ghost" id="btn-settings" style="width: 100%">
-            ⚙ 服务器设置
-          </button>
         </div>
       </aside>
 
@@ -69,6 +66,14 @@
           </button>
           <div class="topbar-title" id="topbar-title">欢迎使用 OpenCode</div>
           <div class="topbar-actions">
+            <button class="icon-btn" id="btn-server" title="服务器设置" aria-label="服务器设置">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="4" width="18" height="7" rx="2" />
+                <rect x="3" y="13" width="18" height="7" rx="2" />
+                <path d="M7 7.5h.01M7 16.5h.01" stroke-linecap="round" />
+              </svg>
+              <span class="srv-dot hidden" id="srv-dot"></span>
+            </button>
             <button class="icon-btn" id="btn-changes" title="更改历史 (Ctrl+Shift+D)" aria-label="更改历史">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M12 3v12M12 3l-4 4M12 3l4 4" stroke-linecap="round" stroke-linejoin="round" />
@@ -109,7 +114,7 @@
 
         <!-- Composer -->
         <div id="pending-prompts"></div>
-        <div id="todo-box" class="todo-box hidden" style="margin:0 18px 6px;max-width:780px"></div>
+        <div id="todo-box" class="todo-box hidden"></div>
 
         <!-- Changes / diff drawer -->
         <aside id="changes-panel" class="drawer">
@@ -138,6 +143,14 @@
           <div id="cmd-pop" class="cmd-pop hidden"></div>
           <div id="composer">
             <div class="composer-row">
+              <button class="cascade-btn" id="btn-cascade" title="提权等级：默认" aria-label="提权等级">
+                <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+                  <circle cx="6" cy="6" r="2.1" fill="currentColor"/>
+                  <circle cx="18" cy="6" r="2.1" fill="currentColor"/>
+                  <circle cx="6" cy="18" r="2.1" fill="currentColor"/>
+                  <circle cx="18" cy="18" r="2.1" fill="currentColor"/>
+                </svg>
+              </button>
               <textarea
                 id="input"
                 rows="1"
@@ -151,6 +164,10 @@
               </button>
             </div>
             <div class="composer-tools">
+              <label class="remember-wrap" title="记住本次会话的权限选择">
+                <input type="checkbox" id="remember-chk" />
+                <span>记住权限</span>
+              </label>
               <div class="select-wrap">
                 <select id="model-select" title="模型">
                   <option value="">默认模型</option>
@@ -174,30 +191,68 @@
       <div class="modal" id="settings-modal">
         <div class="modal-header">
           <h3>服务器设置</h3>
+          <span class="srv-conn" id="srv-conn-pill">未连接</span>
+          <span style="flex:1"></span>
           <button class="icon-btn" id="btn-close-settings" aria-label="关闭">&#x2715;</button>
         </div>
+
+        <div class="modal-tabs" id="srv-tabs">
+          <button class="tab active" data-tab="servers">服务器</button>
+          <button class="tab" data-tab="status">状态</button>
+          <button class="tab" data-tab="mcp">MCP</button>
+          <button class="tab" data-tab="tools">工具 / 插件</button>
+        </div>
+
         <div class="modal-body">
-          <div class="field">
-            <label for="cfg-baseurl">服务器地址 (URL)</label>
-            <input id="cfg-baseurl" type="url" placeholder="http://127.0.0.1:4096" spellcheck="false" />
-            <div class="help">
-              需为 <code>opencode serve</code> 的地址，例如 <code>http://127.0.0.1:4096</code>。
-              若服务开启了密码保护，请在下方填写凭据。
+          <!-- TAB: 服务器 (multi-server management) -->
+          <div class="tab-pane" id="pane-servers">
+            <div class="srv-list" id="srv-list"></div>
+            <div class="srv-form">
+              <div class="srv-form-title" id="srv-form-title">编辑服务器</div>
+              <input type="hidden" id="srv-editing" />
+              <div class="field">
+                <label for="cfg-name">名称（可选）</label>
+                <input id="cfg-name" type="text" placeholder="例如：本机、远程主机" spellcheck="false" />
+              </div>
+              <div class="field">
+                <label for="cfg-baseurl">服务器地址 (URL)</label>
+                <input id="cfg-baseurl" type="url" placeholder="http://127.0.0.1:4096" spellcheck="false" />
+                <div class="help">
+                  需为 <code>opencode serve</code> 的地址；若服务开启密码保护，请在下方填写凭据。
+                </div>
+              </div>
+              <div class="field">
+                <label for="cfg-username">用户名</label>
+                <input id="cfg-username" type="text" placeholder="opencode" spellcheck="false" />
+                <div class="help">默认 <code>opencode</code>（或服务端 <code>OPENCODE_SERVER_USERNAME</code>）。</div>
+              </div>
+              <div class="field">
+                <label for="cfg-password">密码</label>
+                <input id="cfg-password" type="password" placeholder="留空则不需要鉴权" />
+                <div class="help">对应服务端 <code>OPENCODE_SERVER_PASSWORD</code>，留空表示无需鉴权。</div>
+              </div>
+              <div class="modal-actions">
+                <button class="btn btn-danger-btn" id="btn-rm-srv">删除</button>
+                <span style="flex:1"></span>
+                <button class="btn btn-ghost" id="btn-new-srv">+ 新建服务器</button>
+                <button class="btn btn-primary" id="btn-save-settings">保存并连接</button>
+              </div>
             </div>
           </div>
-          <div class="field">
-            <label for="cfg-username">用户名</label>
-            <input id="cfg-username" type="text" placeholder="opencode" spellcheck="false" />
-            <div class="help">默认 <code>opencode</code>（或服务端设置的 <code>OPENCODE_SERVER_USERNAME</code>）。</div>
+
+          <!-- TAB: 状态 -->
+          <div class="tab-pane hidden" id="pane-status">
+            <div class="insp" id="srv-status-rows"></div>
           </div>
-          <div class="field">
-            <label for="cfg-password">密码</label>
-            <input id="cfg-password" type="password" placeholder="留空则不需要鉴权" />
-            <div class="help">对应服务端的 <code>OPENCODE_SERVER_PASSWORD</code>，留空表示无需鉴权。</div>
+
+          <!-- TAB: MCP -->
+          <div class="tab-pane hidden" id="pane-mcp">
+            <div class="insp" id="srv-mcp-rows"></div>
           </div>
-          <div class="modal-actions">
-            <button class="btn btn-ghost" id="btn-cancel-settings">取消</button>
-            <button class="btn btn-primary" id="btn-save-settings">保存并连接</button>
+
+          <!-- TAB: 工具 / 插件 -->
+          <div class="tab-pane hidden" id="pane-tools">
+            <div id="srv-tools-rows"></div>
           </div>
         </div>
       </div>

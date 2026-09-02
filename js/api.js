@@ -65,13 +65,17 @@ export class OpenCodeClient {
     const raw = await res.text();
     if (raw === "true") return true;
     if (raw === "false") return false;
-    return raw;
+    try {
+      return JSON.parse(raw);
+    } catch (e) {
+      return raw;
+    }
   }
 
   // ---- Health / discovery ----
   async health() {
     try {
-      const h = await this.request("/health").catch(() => this.request("/global/health"));
+      const h = await this.request("/global/health").catch(() => this.request("/health"));
       return h && typeof h === "object" ? h : { healthy: true };
     } catch (e) {
       return null;

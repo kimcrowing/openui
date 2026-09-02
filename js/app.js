@@ -20,6 +20,9 @@ import { makeStreamingTextNode } from "./messages.js";
 
 const $ = (id) => document.getElementById(id);
 const MODE_KEY = "opencode-web.mode"; // 'serve' | 'async'
+const PART_KEY = "opencode-web.part"; // prompt cascade: user | assign | subtask | project
+const KEY_SERVERS = "opencode-web.servers";
+const KEY_ACTIVE = "opencode-web.active";
 
 /* --------------------------------------------------------------------------
  * Client / connection
@@ -36,32 +39,99 @@ const defaultConfig = {
   password: "",
 };
 
-function loadConfig() {
+function hostFromUrl(url) {
   try {
-    return { ...defaultConfig, ...JSON.parse(localStorage.getItem("opencode-web.config") || "{}") };
+    const u = new URL(url);
+    return u.hostname + (u.port ? ":" + u.port : "");
   } catch {
-    return { ...defaultConfig };
+    return url;
   }
 }
-function saveConfig(cfg) {
-  localStorage.setItem("opencode-web.config", JSON.stringify(cfg));
+
+// Multi-server support. Configurations live in `opencode-web.servers` as an
+// array; `opencode-web.active` names the current one. A single legacy
+// `opencode-web.config` entry is migrated on first load.
+function loadConfigState() {
+  let servers = [];
+  let active = null;
+  try {
+    servers = JSON.parse(localStorage.getItem(KEY_SERVERS) || "[]");
+  } catch {
+    servers = [];
+  }
+  try {
+    active = localStorage.getItem(KEY_ACTIVE);
+  } catch {
+    active = null;
+  }
+  if (!servers.length) {
+    try {
+      const c = JSON.parse(localStorage.getItem("opencode-web.config") || "{}");
+      if (c && (c.baseUrl || c.url)) {
+        servers = [{
+          id: "s1",
+          name: hostFromUrl(c.baseUrl || c.url),
+          baseUrl: c.baseUrl || c.url || "",
+          username: c.username || "opencode",
+          password: c.password || "",
+        }];
+        localStorage.setItem(KEY_SERVERS, JSON.stringify(servers));
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  if (!Array.isArray(servers) || !servers.length) {
+    servers = [{ id: "s1", name: "本机", ...defaultConfig }];
+    localStorage.setItem(KEY_SERVERS, JSON.stringify(servers));
+  }
+  if (!servers.find((s) => s.id === active)) active = servers[0].id;
+  return { servers, activeServerId: active };
+}
+
+function persistServers() {
+  const st = getState();
+  localStorage.setItem(KEY_SERVERS, JSON.stringify(st.servers));
+  localStorage.setItem(KEY_ACTIVE, st.activeServerId || "");
+  const active = st.servers.find((s) => s.id === st.activeServerId);
+  if (active) {
+    localStorage.setItem(
+      "opencode-web.config",
+      JSON.stringify({ baseUrl: active.baseUrl, username: active.username, password: active.password })
+    );
+  }
+}
+
+function activeConfig() {
+  const st = getState();
+  const s = st.servers.find((x) => x.id === st.activeServerId);
+  return s
+    ? { baseUrl: s.baseUrl, username: s.username, password: s.password }
+    : { ...defaultConfig };
 }
 
 async function connect() {
-  const cfg = loadConfig();
+  const cfg = activeConfig();
   client = new OpenCodeClient(cfg);
   setState({ config: cfg, connected: false });
 
   const health = await client.health();
   if (!health) {
     setState({ connected: false, health: null });
+    renderSrvDot(false);
     scheduleReconnect();
     return false;
   }
   setState({ connected: true, health });
+  renderSrvDot(true);
   await refreshAll();
   connectEvents();
   return true;
+}
+
+function renderSrvDot(on) {
+  const dot = $("srv-dot");
+  if (dot) dot.classList.toggle("hidden", !on);
 }
 
 function scheduleReconnect() {
@@ -436,6 +506,41 @@ async function deleteSession(id) {
  * Sending messages
  * -------------------------------------------------------------------------- */
 
+const CASCADE_LEVELS = [
+  { part: "user", label: "默认" },
+  { part: "assign", label: "分配智能体" },
+  { part: "subtask", label: "子任务" },
+  { part: "project", label: "项目" },
+];
+
+function currentCascade() {
+  const p = localStorage.getItem(PART_KEY) || "user";
+  return CASCADE_LEVELS.find((l) => l.part === p) || CASCADE_LEVELS[0];
+}
+
+function cycleCascade() {
+  const cur = currentCascade();
+  const next = CASCADE_LEVELS[(CASCADE_LEVELS.indexOf(cur) + 1) % CASCADE_LEVELS.length];
+  localStorage.setItem(PART_KEY, next.part);
+  const btn = $("btn-cascade");
+  if (btn) btn.title = `提权等级：${next.label}`;
+  toast(`提权等级：${next.label}`);
+}
+
+function initComposerControls() {
+  const btn = $("btn-cascade");
+  if (btn) btn.title = `提权等级：${currentCascade().label}`;
+  const chk = $("remember-chk");
+  if (chk) {
+    try { chk.checked = localStorage.getItem("opencode-web.remember") === "1"; } catch (e) {}
+  } else {
+    return;
+  }
+  chk.addEventListener("change", () => {
+    try { localStorage.setItem("opencode-web.remember", chk.checked ? "1" : "0"); } catch (e) {}
+  });
+}
+
 async function sendPrompt(text) {
   if (!client || !text.trim()) return;
   const st = getState();
@@ -457,6 +562,11 @@ async function sendPrompt(text) {
       ? { providerID: st.defaultModel.split("/")[0], modelID: st.defaultModel.split("/")[1] }
       : undefined;
   const agent = $("agent-select").value || undefined;
+  const promptPart = localStorage.getItem(PART_KEY) || "user";
+  const remember = $("remember-chk") ? $("remember-chk").checked : false;
+  const extra = {};
+  if (promptPart && promptPart !== "user") extra.part = promptPart;
+  if (remember) extra.remember = true;
 
   const mode = localStorage.getItem(MODE_KEY) || "serve";
   setState({ busy: true, prompt: "" });
@@ -467,6 +577,7 @@ async function sendPrompt(text) {
         parts: [{ type: "text", text }],
         model,
         agent,
+        ...extra,
       });
       // New assistant message will be created server-side; rely on poller/SSE
       render(getState());
@@ -475,6 +586,7 @@ async function sendPrompt(text) {
         parts: [{ type: "text", text }],
         model,
         agent,
+        ...extra,
       });
       // res = { info, parts }
       const msgs = getState().messages;
@@ -664,8 +776,15 @@ function renderDiff(diffs) {
   }
 }
 
-function openChanges() { $("changes-panel").classList.add("open"); loadDiff(); }
-function closeChanges() { $("changes-panel").classList.remove("open"); }
+function openChanges() {
+  $("changes-panel").classList.add("open");
+  document.body.classList.add("changes-open");
+  loadDiff();
+}
+function closeChanges() {
+  $("changes-panel").classList.remove("open");
+  document.body.classList.remove("changes-open");
+}
 
 async function doUnrevert() {
   const id = getState().currentSessionId;
@@ -927,10 +1046,28 @@ function renderTodos() {
   if (!st.todos || !st.todos.length) { host.classList.add("hidden"); return; }
   host.classList.remove("hidden");
   host.innerHTML = "";
+  const done = st.todos.filter((t) => t.status === "completed").length;
+  const isCollapsed = !!(st.todoCollapsed && st.todoCollapsed[st.currentSessionId]);
   const head = document.createElement("div");
   head.className = "t-head";
-  head.textContent = `待办 (${st.todos.filter((t) => t.status === "completed").length}/${st.todos.length})`;
+  const title = document.createElement("span");
+  title.textContent = `待办 (${done}/${st.todos.length})`;
+  const toggle = document.createElement("button");
+  toggle.className = "t-toggle";
+  toggle.title = isCollapsed ? "展开待办" : "折叠待办";
+  toggle.innerHTML = isCollapsed
+    ? '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+    : '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  toggle.addEventListener("click", () => {
+    const map = { ...(getState().todoCollapsed || {}) };
+    map[getState().currentSessionId] = !map[getState().currentSessionId];
+    setState({ todoCollapsed: map });
+    renderTodos();
+  });
+  head.append(title, toggle);
   host.appendChild(head);
+  if (isCollapsed) { host.classList.add("collapsed"); return; }
+  host.classList.remove("collapsed");
   for (const t of st.todos) {
     const row = document.createElement("div");
     row.className = "todo-item" + (t.status === "completed" ? " done" : "");
@@ -963,43 +1100,344 @@ function openThemeModal() {
   renderThemeGrid();
 }
 
+let srvEditId = null; // id of server currently in the form; null = adding new
+
+function srvTabs() {
+  return Array.from(document.querySelectorAll("#srv-tabs .tab"));
+}
+
+function switchSrvTab(name) {
+  for (const t of srvTabs()) t.classList.toggle("active", t.dataset.tab === name);
+  for (const id of ["servers", "status", "mcp", "tools"]) {
+    const pane = $("pane-" + id);
+    if (pane) pane.classList.toggle("hidden", id !== name);
+  }
+}
+
 function openSettingsModal() {
   $("settings-modal").classList.remove("hidden");
   $("theme-modal").classList.add("hidden");
   $("overlay").classList.add("open");
-  const c = getState().config;
-  $("cfg-baseurl").value = c.baseUrl;
-  $("cfg-username").value = c.username;
-  $("cfg-password").value = c.password;
+  switchSrvTab("servers");
+  renderServerList();
+  // Edit the active server by default
+  const st = getState();
+  loadServerForm(st.servers.find((s) => s.id === st.activeServerId) || st.servers[0] || null);
+  updateSrvConnPill();
+  refreshServerInfo();
 }
 
 function closeModal() {
   $("overlay").classList.remove("open");
 }
 
+function updateSrvConnPill() {
+  const st = getState();
+  const pill = $("srv-conn-pill");
+  pill.textContent = st.connected
+    ? `已连接${st.health && st.health.version ? " v" + st.health.version : ""}`
+    : "未连接";
+  pill.className = "srv-conn " + (st.connected ? "online" : "offline");
+}
+
+function renderServerList() {
+  const host = $("srv-list");
+  const st = getState();
+  host.innerHTML = "";
+  if (!st.servers.length) {
+    host.innerHTML = `<div class="muted" style="padding:12px;font-size:12px">暂无服务器，请在下方添加。</div>`;
+    return;
+  }
+  const cur = st.connected ? st.activeServerId : null;
+  for (const s of st.servers) {
+    const card = document.createElement("div");
+    card.className = "srv-card" + (s.id === st.activeServerId ? " active" : "");
+    const led = document.createElement("span");
+    led.className = "srv-led" + (s.id === cur ? " on" : "");
+    led.title = s.id === cur ? "已连接" : "未连接";
+    const main = document.createElement("div");
+    main.className = "srv-main";
+    const nm = document.createElement("div");
+    nm.className = "srv-nm";
+    nm.textContent = s.name || hostFromUrl(s.baseUrl) || s.baseUrl || "服务器";
+    const url = document.createElement("div");
+    url.className = "srv-url";
+    url.textContent = s.baseUrl;
+    url.title = s.baseUrl;
+    main.append(nm, url);
+    card.append(led, main);
+
+    const acts = document.createElement("div");
+    acts.className = "srv-acts";
+    if (s.id === st.activeServerId) {
+      const curBtn = document.createElement("button");
+      curBtn.className = "btn-mini active";
+      curBtn.textContent = "使用中";
+      acts.appendChild(curBtn);
+    } else {
+      const use = document.createElement("button");
+      use.className = "btn-mini";
+      use.textContent = "使用";
+      use.addEventListener("click", () => useServer(s.id));
+      acts.appendChild(use);
+    }
+    const edit = document.createElement("button");
+    edit.className = "btn-mini";
+    edit.textContent = "编辑";
+    edit.addEventListener("click", () => loadServerForm(s));
+    acts.appendChild(edit);
+    const del = document.createElement("button");
+    del.className = "btn-mini danger";
+    del.textContent = "删除";
+    del.addEventListener("click", () => deleteServer(s.id));
+    acts.appendChild(del);
+    card.append(acts);
+    host.appendChild(card);
+  }
+}
+
+function loadServerForm(s) {
+  srvEditId = s ? s.id : null;
+  $("srv-editing").value = s ? s.id : "";
+  $("cfg-name").value = s ? s.name || "" : "";
+  $("cfg-baseurl").value = s ? s.baseUrl || "" : "";
+  $("cfg-username").value = s ? s.username || "opencode" : "opencode";
+  $("cfg-password").value = s ? s.password || "" : "";
+  $("srv-form-title").textContent = s ? `编辑服务器 · ${s.name || hostFromUrl(s.baseUrl) || s.baseUrl}` : "添加服务器";
+}
+
+function startAddServer() {
+  srvEditId = null;
+  $("srv-editing").value = "";
+  $("cfg-name").value = "";
+  $("cfg-baseurl").value = "";
+  $("cfg-username").value = "opencode";
+  $("cfg-password").value = "";
+  $("srv-form-title").textContent = "添加服务器";
+  $("cfg-baseurl").focus();
+}
+
+function readServerForm() {
+  return {
+    name: $("cfg-name").value.trim(),
+    baseUrl: $("cfg-baseurl").value.trim(),
+    username: $("cfg-username").value.trim() || "opencode",
+    password: $("cfg-password").value,
+  };
+}
+
+async function saveServersFromForm() {
+  const data = readServerForm();
+  if (!data.baseUrl) {
+    toast("请填写服务器地址");
+    return;
+  }
+  const st = getState();
+  let servers = [...st.servers];
+  let id = srvEditId;
+  if (id && servers.find((s) => s.id === id)) {
+    servers = servers.map((s) => (s.id === id ? { ...s, ...data } : s));
+  } else {
+    id = "s" + Date.now().toString(36);
+    servers.push({ id, ...data });
+  }
+  setState({ servers, activeServerId: id });
+  persistServers();
+  setState({ config: activeConfig(), currentSessionId: null, messages: [] });
+  renderServerList();
+  loadServerForm(servers.find((s) => s.id === id));
+  updateSrvConnPill();
+  toast("正在连接服务器…");
+  await connect();
+  updateSrvConnPill();
+  refreshServerInfo();
+  switchSrvTab("status");
+}
+
+async function deleteServer(id) {
+  if (!confirm("确定删除这个服务器配置？")) return;
+  const st = getState();
+  let servers = st.servers.filter((s) => s.id !== id);
+  let active = st.activeServerId;
+  if (active === id) active = servers.length ? servers[0].id : null;
+  setState({ servers, activeServerId: active });
+  persistServers();
+  if (!servers.length) {
+    client = null;
+    setState({ config: { ...defaultConfig }, connected: false, currentSessionId: null, messages: [], sessions: [] });
+  } else {
+    setState({ config: activeConfig() });
+    await connect();
+  }
+  renderServerList();
+  loadServerForm(servers.find((s) => s.id === active) || null);
+  updateSrvConnPill();
+  switchSrvTab("servers");
+}
+
+async function useServer(id) {
+  setState({ activeServerId: id });
+  persistServers();
+  setState({ config: activeConfig(), currentSessionId: null, messages: [] });
+  renderServerList();
+  loadServerForm(getState().servers.find((s) => s.id === id));
+  updateSrvConnPill();
+  toast("正在连接服务器…");
+  await connect();
+  updateSrvConnPill();
+  refreshServerInfo();
+  switchSrvTab("status");
+}
+
+/* --------------------------------------------------------------------------
+ * Server info panel (状态 / MCP / 工具·插件)
+ * -------------------------------------------------------------------------- */
+
+async function refreshServerInfo() {
+  const info = {
+    health: null, path: null, project: null, vcs: null,
+    sessions: null, providers: null, agents: null, mcp: null, tools: [],
+  };
+  if (client) {
+    const jobs = [
+      client.health(),
+      client.path().catch(() => null),
+      client.project().catch(() => null),
+      client.vcs().catch(() => null),
+      client.listSessions().catch(() => null),
+      client.providers().catch(() => null),
+      client.agents().catch(() => null),
+      client.mcp().catch(() => null),
+      client.toolIds().catch(() => null),
+    ];
+    const [h, path, project, vcs, sessions, providers, agents, mcp, tools] = await Promise.all(jobs);
+    info.health = h;
+    info.path = path;
+    info.project = project;
+    info.vcs = vcs;
+    info.sessions = sessions;
+    info.providers = providers;
+    info.agents = agents;
+    info.mcp = mcp;
+    info.tools = tools || [];
+  }
+  renderStatusRows(info);
+  renderMCPRows(info);
+  renderToolsRows(info);
+}
+
+function renderStatusRows(info) {
+  const host = $("srv-status-rows");
+  if (!host) return;
+  host.innerHTML = "";
+  const rows = [];
+  rows.push(["连接状态", info.health ? "已连接" : "未连接"]);
+  if (info.health && info.health.version) rows.push(["服务器版本", info.health.version]);
+  if (info.path && info.path.worktree) rows.push(["工作区", info.path.worktree]);
+  if (info.path && info.path.directory) rows.push(["项目目录", info.path.directory]);
+  if (info.project && info.project.id) rows.push(["项目 ID", info.project.id]);
+  if (info.vcs && info.vcs.branch) rows.push(["Git 分支", info.vcs.branch]);
+  if (Array.isArray(info.sessions)) rows.push(["会话", String(info.sessions.length) + " 个"]);
+  if (info.providers) {
+    const all = info.providers.all || info.providers.providers || [];
+    const models = all.reduce((n, p) => n + Object.keys(p.models || {}).length, 0);
+    rows.push(["模型", models + " 个 / " + all.length + " 家提供商"]);
+  }
+  if (Array.isArray(info.agents)) {
+    const prim = info.agents.filter((a) => a.mode === "primary" || !a.mode).length;
+    rows.push(["智能体", prim + " 个"]);
+  }
+  if (!rows.length) {
+    host.innerHTML = `<div class="muted" style="padding:12px;font-size:12px">暂无服务器信息。</div>`;
+    return;
+  }
+  for (const [k, v] of rows) {
+    const row = document.createElement("div");
+    row.className = "insp-row";
+    const kb = document.createElement("span");
+    kb.className = "k"; kb.textContent = k;
+    const vb = document.createElement("span");
+    vb.className = "v"; vb.textContent = v;
+    row.append(kb, vb);
+    host.appendChild(row);
+  }
+}
+
+function renderMCPRows(info) {
+  const host = $("srv-mcp-rows");
+  if (!host) return;
+  host.innerHTML = "";
+  const mcp = info.mcp;
+  if (!mcp || typeof mcp !== "object") {
+    host.innerHTML = `<div class="muted" style="padding:12px;font-size:12px">暂无 MCP 服务器。</div>`;
+    return;
+  }
+  const names = Object.keys(mcp);
+  if (!names.length) {
+    host.innerHTML = `<div class="muted" style="padding:12px;font-size:12px">暂无 MCP 服务器。</div>`;
+    return;
+  }
+  for (const name of names) {
+    const status = String(mcp[name] && (mcp[name].status || mcp[name]) || "unknown");
+    const row = document.createElement("div");
+    row.className = "insp-row";
+    const dot = document.createElement("span");
+    dot.className = "dot-st " + (status === "connected" ? "ok" : status === "error" ? "err" : "warn");
+    const kb = document.createElement("span");
+    kb.className = "k"; kb.textContent = name;
+    const badge = document.createElement("span");
+    badge.className = "mcp-badge " + status;
+    badge.textContent = status;
+    const vb = document.createElement("span");
+    vb.className = "v";
+    row.append(dot, kb, vb, badge);
+    host.appendChild(row);
+  }
+}
+
+function renderToolsRows(info) {
+  const host = $("srv-tools-rows");
+  if (!host) return;
+  host.innerHTML = "";
+  const tools = info.tools || [];
+  const head = document.createElement("div");
+  head.className = "tools-head";
+  head.textContent = `工具 / 插件：共 ${tools.length} 个`;
+  host.appendChild(head);
+  if (tools.length) {
+    const wrap = document.createElement("div");
+    wrap.className = "tools-chips";
+    for (const t of tools) {
+      const chip = document.createElement("span");
+      chip.className = "tool-chip";
+      chip.textContent = t;
+      chip.title = t;
+      wrap.appendChild(chip);
+    }
+    host.appendChild(wrap);
+  }
+}
+
 function bindEvents() {
   $("btn-new-session").addEventListener("click", newSession);
   $("btn-empty-settings").addEventListener("click", openSettingsModal);
-  $("btn-settings").addEventListener("click", openSettingsModal);
+  $("btn-server").addEventListener("click", openSettingsModal);
+  $("btn-cascade").addEventListener("click", cycleCascade);
+  for (const t of srvTabs()) t.addEventListener("click", () => switchSrvTab(t.dataset.tab));
+  $("btn-new-srv").addEventListener("click", startAddServer);
+  $("btn-rm-srv").addEventListener("click", () => {
+    const id = $("srv-editing").value;
+    if (id) deleteServer(id);
+    else toast("当前是新建状态，没有可删除的服务器");
+  });
   $("btn-theme").addEventListener("click", openThemeModal);
   $("btn-close-settings").addEventListener("click", closeModal);
-  $("btn-cancel-settings").addEventListener("click", closeModal);
   $("btn-close-theme").addEventListener("click", closeModal);
   $("overlay").addEventListener("click", (e) => {
     if (e.target.id === "overlay") closeModal();
   });
 
-  $("btn-save-settings").addEventListener("click", async () => {
-    const cfg = {
-      baseUrl: $("cfg-baseurl").value.trim() || defaultConfig.baseUrl,
-      username: $("cfg-username").value.trim() || "opencode",
-      password: $("cfg-password").value,
-    };
-    saveConfig(cfg);
-    closeModal();
-    toast("正在连接服务器…");
-    await connect();
-  });
+  $("btn-save-settings").addEventListener("click", saveServersFromForm);
 
   $("btn-close-sidebar").addEventListener("click", () => setState({ sidebarOpen: false }));
   $("btn-open-sidebar").addEventListener("click", () => setState({ sidebarOpen: true }));
@@ -1150,19 +1588,35 @@ function toast(msg) {
 
 function init() {
   setState({ theme: getTheme() });
+  const loaded = loadConfigState();
+  setState({
+    servers: loaded.servers,
+    activeServerId: loaded.activeServerId,
+    config: activeConfig(),
+  });
   setActions({
     onSelectSession: selectSession,
     onDeleteSession: deleteSession,
   });
   bindEvents();
   renderThemeGrid();
+  initComposerControls();
 
   subscribe(() => {
     const s = getState();
     document.getElementById("sidebar").classList.toggle("open", s.sidebarOpen);
     document.getElementById("sidebar-backdrop").classList.toggle("open", s.sidebarOpen);
+    const pill = document.getElementById("server-pill");
+    if (pill) {
+      pill.className = s.connected ? "pill online" : "pill offline";
+      pill.lastChild.textContent = s.connected
+        ? `已连接${s.health && s.health.version ? ` · v${s.health.version}` : ""}`
+        : "未连接";
+    }
+    renderSrvDot(s.connected);
   });
 
+  updateSrvConnPill();
   render(getState());
   connect();
 }
@@ -1174,5 +1628,6 @@ function closeSidebarOnMobile() {
 
 window.__revertToMessage = revertToMessage;
 window.__renderDiff = renderDiff;
+window.__ui = { getState, setState, renderTodos, openSettingsModal, switchSrvTab };
 
 init();

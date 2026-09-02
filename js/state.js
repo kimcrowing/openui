@@ -20,6 +20,9 @@ const state = {
   settingsOpen: false,
   theme: "system",
   themeModalOpen: false,
+  servers: [],           // [{ id, name, baseUrl, username, password }]
+  activeServerId: null,
+  todoCollapsed: {},      // sessionId -> bool
   config: {
     baseUrl: "",
     username: "opencode",
