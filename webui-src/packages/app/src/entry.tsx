@@ -97,10 +97,15 @@ if (!(root instanceof HTMLElement) && import.meta.env.DEV) {
   throw new Error(getRootNotFoundError())
 }
 
+// Sub-path deployments (e.g. GitHub Pages at /openui/) serve static assets only and
+// have no same-origin backend, so location.origin must never be treated as the server.
+const isSubPathDeployment = () => import.meta.env.BASE_URL !== "/"
+
 const getCurrentUrl = () => {
   if (location.hostname.includes("opencode.ai")) return "http://localhost:4096"
   if (import.meta.env.DEV)
     return `http://${import.meta.env.VITE_OPENCODE_SERVER_HOST ?? "localhost"}:${import.meta.env.VITE_OPENCODE_SERVER_PORT ?? "4096"}`
+  if (isSubPathDeployment()) return ""
   return location.origin
 }
 
@@ -154,22 +159,25 @@ if (root instanceof HTMLElement) {
   void loadInitialLocale().then((locale) => {
     const auth = authFromToken(new URLSearchParams(location.search).get("auth_token"))
     clearAuthToken()
-    const server: ServerConnection.Http = {
-      type: "http",
-      authToken: !!auth,
-      http: {
-        url: getCurrentUrl(),
-        ...auth,
-      },
-    }
+    const currentUrl = getCurrentUrl()
+    const server: ServerConnection.Http | undefined = currentUrl
+      ? {
+          type: "http",
+          authToken: !!auth,
+          http: {
+            url: currentUrl,
+            ...auth,
+          },
+        }
+      : undefined
     render(
       () => (
         <PlatformProvider value={platform}>
           <AppBaseProviders locale={locale}>
             <AppInterface
               defaultServer={ServerConnection.Key.make(getDefaultUrl())}
-              canonicalLocalServer={ServerConnection.key(server)}
-              servers={[server]}
+              canonicalLocalServer={server ? ServerConnection.key(server) : undefined}
+              servers={server ? [server] : undefined}
               disableHealthCheck
               router={PrefixedRouterRoot}
             />
