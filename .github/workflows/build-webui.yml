@@ -1,0 +1,112 @@
+name: Build & Deploy OpenCode Web UI
+
+# 基于官方 opencode packages/app（v1.18.25）源码改动（webui-src/packages/app，
+# overlay 会覆盖进官方仓库的 packages/app），用官方自带的 bun 构建，
+# 产出分发到 GitHub Pages（子路径 /openui/ 部署，VITE_BASE 处理资产路径，
+# SPA fallback: dist/index.html 复制为 404.html 以便 history 路由刷新可加载）。
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'webui-src/**'
+      - '.github/workflows/build-webui.yml'
+  workflow_dispatch:
+    inputs:
+      opencode_version:
+        description: 'Upstream opencode tag to base on'
+        required: false
+        default: '1.18.25'
+
+concurrency:
+  group: webui-build
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+env:
+  OPENCODE_VERSION: ${{ github.event.inputs.opencode_version || '1.18.25' }}
+  VITE_BASE: '/openui/'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout this repo (overlay)
+        uses: actions/checkout@v4
+        with:
+          path: repo
+
+      - name: Clone upstream opencode
+        run: |
+          git clone --depth 1 --branch "v${OPENCODE_VERSION}" \
+            https://github.com/anomalyco/opencode.git "$RUNNER_TEMP/upstream"
+
+      - name: Apply overlay onto packages/app
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/upstream/packages/app"
+          rm -rf "$APP"
+          cp -a "$GITHUB_WORKSPACE/repo/webui-src/packages/app" "$APP"
+          echo "== packages/app after overlay =="
+          ls "$APP" | head -20
+          echo "has index.css: $(test -f "$APP/src/index.css" && echo yes || echo NO)"
+          echo "has vite.config.ts: $(test -f "$APP/vite.config.ts" && echo yes || echo NO)"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Cache bun deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            ${{ runner.temp }}/upstream/node_modules
+            ${{ runner.temp }}/upstream/packages/*/node_modules
+          key: ${{ runner.os }}-bun-${{ env.OPENCODE_VERSION }}-${{ hashFiles('webui-src/packages/app/package.json') }}
+
+      - name: Install upstream deps
+        working-directory: ${{ runner.temp }}/upstream
+        run: |
+          bun install --ignore-scripts --frozen-lockfile
+
+      - name: Build web app
+        working-directory: ${{ runner.temp }}/upstream/packages/app
+        run: |
+          bun run build
+
+      - name: Stage Pages artifact
+        run: |
+          set -euo pipefail
+          DIST="$RUNNER_TEMP/upstream/packages/app/dist"
+          STAGE="$RUNNER_TEMP/stage"
+          mkdir -p "$STAGE"
+          cp -a "$DIST/." "$STAGE/"
+          # SPA fallback: any path under /openui/ returns index.html (history routing)
+          cp "$STAGE/index.html" "$STAGE/404.html"
+          echo "== staged =="
+          find "$STAGE" -maxdepth 2 -type f | sed "s|$STAGE/||" | sort | head -40
+          echo "== total size =="
+          du -sh "$STAGE"
+
+      - name: Upload Pages artifact
+        uses: actions/configure-pages@v5
+        id: configure
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ runner.temp }}/stage
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

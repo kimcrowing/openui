@@ -1,0 +1,7 @@
+# build artifacts
+node_modules/
+dist/
+*.log
+
+# local tooling
+.DS_Store
