@@ -94,7 +94,7 @@ jobs:
           # SPA fallback: any path under /openui/ returns index.html (history routing)
           cp "$STAGE/index.html" "$STAGE/404.html"
           echo "== staged =="
-          find "$STAGE" -maxdepth 2 -type f | sed "s|$STAGE/||" | sort | head -40
+          find "$STAGE" -maxdepth 2 -type f | sed "s|$STAGE/||" | sort | awk 'NR<=40'
           echo "== total size =="
           du -sh "$STAGE"
 
