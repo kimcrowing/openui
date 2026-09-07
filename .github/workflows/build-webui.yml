@@ -1,7 +1,9 @@
 name: Build & Deploy OpenCode Web UI
 
-# 基于官方 opencode packages/app（v1.18.25）源码改动（webui-src/packages/app，
-# overlay 会覆盖进官方仓库的 packages/app），用官方自带的 bun 构建，
+# 基于官方 opencode packages/app（上游 dev 分支 = V2 版 web UI）构建。
+# webui-src/packages/app 只保留本仓库的 overlay 覆盖文件（vite.config、
+# entry.tsx / prefixed-router / titlebar / index.css），CI 把上游 dev 的完整
+# packages/app clone 下来作为基线，再用这些文件合并覆盖（不删除上游文件）。
 # 产出分发到 GitHub Pages（子路径 /openui/ 部署，VITE_BASE 处理资产路径，
 # SPA fallback: dist/index.html 复制为 404.html 以便 history 路由刷新可加载）。
 
@@ -13,10 +15,10 @@ on:
       - '.github/workflows/build-webui.yml'
   workflow_dispatch:
     inputs:
-      opencode_version:
-        description: 'Upstream opencode tag to base on'
+      upstream_ref:
+        description: 'Upstream opencode ref to base on (branch / tag / commit SHA)'
         required: false
-        default: '1.18.25'
+        default: 'dev'
 
 concurrency:
   group: webui-build
@@ -28,7 +30,7 @@ permissions:
   id-token: write
 
 env:
-  OPENCODE_VERSION: ${{ github.event.inputs.opencode_version || '1.18.25' }}
+  UPSTREAM_REF: ${{ github.event.inputs.upstream_ref || 'dev' }}
   VITE_BASE: '/openui/'
   VITE_DEFAULT_SERVER_URL: 'https://kimcrowing.dynv6.net:14096'
 
@@ -47,19 +49,29 @@ jobs:
 
       - name: Clone upstream opencode
         run: |
-          git clone --depth 1 --branch "v${OPENCODE_VERSION}" \
-            https://github.com/anomalyco/opencode.git "$RUNNER_TEMP/upstream"
+          # Default clone (HEAD = dev), then fetch the requested ref so a branch,
+          # tag or commit SHA all work. Shallow, single ref.
+          git clone --depth 1 https://github.com/anomalyco/opencode.git "$RUNNER_TEMP/upstream"
+          cd "$RUNNER_TEMP/upstream"
+          git fetch --depth 1 origin "$UPSTREAM_REF"
+          git checkout -q FETCH_HEAD
+          echo "== upstream HEAD =="
+          git log -1 --format='%H %s'
 
       - name: Apply overlay onto packages/app
         run: |
           set -euo pipefail
           APP="$RUNNER_TEMP/upstream/packages/app"
-          rm -rf "$APP"
-          cp -a "$GITHUB_WORKSPACE/repo/webui-src/packages/app" "$APP"
-          echo "== packages/app after overlay =="
-          ls "$APP" | head -20
-          echo "has index.css: $(test -f "$APP/src/index.css" && echo yes || echo NO)"
-          echo "has vite.config.ts: $(test -f "$APP/vite.config.ts" && echo yes || echo NO)"
+          # Merge-overlay: copy only our overlay files onto the upstream baseline
+          # (upstream provides the full packages/app, including package.json/bunfig).
+          cp -a "$GITHUB_WORKSPACE/repo/webui-src/packages/app/." "$APP/"
+          echo "== overlay files staged =="
+          find "$GITHUB_WORKSPACE/repo/webui-src/packages/app" -type f | sed "s|$GITHUB_WORKSPACE/repo/webui-src/packages/app/||" | sort
+          echo "== sanity checks =="
+          test -f "$APP/src/index.css" && echo "index.css ok" || (echo "index.css MISSING"; exit 1)
+          test -f "$APP/src/router/prefixed-router.tsx" && echo "prefixed-router ok" || (echo "prefixed-router MISSING"; exit 1)
+          test -f "$APP/package.json" && echo "upstream package.json ok" || (echo "upstream package.json MISSING"; exit 1)
+          test -f "$APP/vendor/opencode-ai-client-1.17.13-v2.tgz" && echo "vendor tgz ok" || (echo "vendor tgz MISSING (upstream changed?)"; ls "$APP/vendor" 2>/dev/null || true)
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -73,7 +85,7 @@ jobs:
             ~/.bun/install/cache
             ${{ runner.temp }}/upstream/node_modules
             ${{ runner.temp }}/upstream/packages/*/node_modules
-          key: ${{ runner.os }}-bun-${{ env.OPENCODE_VERSION }}-${{ hashFiles('webui-src/packages/app/package.json') }}
+          key: ${{ runner.os }}-bun-v2-${{ env.UPSTREAM_REF }}-${{ hashFiles('webui-src/**') }}
 
       - name: Install upstream deps
         working-directory: ${{ runner.temp }}/upstream

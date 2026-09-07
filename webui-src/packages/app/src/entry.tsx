@@ -10,8 +10,8 @@ import { dict as en } from "@/i18n/en"
 import { dict as zh } from "@/i18n/zh"
 import { authFromToken } from "@/utils/server"
 import pkg from "../package.json"
-import { PrefixedRouterRoot } from "@/router/prefixed-router"
 import { ServerConnection } from "./context/server"
+import { PrefixedRouterRoot } from "@/router/prefixed-router"
 
 const DEFAULT_SERVER_URL_KEY = "opencode.settings.dat:defaultServerUrl"
 
@@ -97,9 +97,10 @@ if (!(root instanceof HTMLElement) && import.meta.env.DEV) {
   throw new Error(getRootNotFoundError())
 }
 
-// Sub-path deployments (e.g. GitHub Pages at /openui/) serve static assets only and
-// have no same-origin backend; the static origin must never be treated as the server.
-// VITE_DEFAULT_SERVER_URL (set at build time) points web visitors at the real backend.
+// Sub-path deployments (e.g. GitHub Pages "https://user.github.io/openui/") serve
+// static assets only and have no same-origin backend; the static origin must never
+// be treated as the server. VITE_DEFAULT_SERVER_URL (set at build time) points web
+// visitors at the real backend instead.
 const isSubPathDeployment = () => import.meta.env.BASE_URL !== "/"
 
 const getCurrentUrl = () => {

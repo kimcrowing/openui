@@ -21,7 +21,7 @@ const sentry =
 
 export default defineConfig({
   // VITE_BASE allows static subpath deployments (e.g. GitHub Pages "/openui/").
-  // Default "/" keeps official behavior (server embed at origin root).
+  // Default "/" keeps official behavior ( the app is served at the origin root ).
   base: process.env.VITE_BASE || "/",
   plugins: [desktopPlugin, sentry] as any,
   server: {
@@ -32,8 +32,7 @@ export default defineConfig({
   build: {
     target: "esnext",
     // Static subpath deployment (Pages) has no local file access for maps;
-    // disabling sourcemaps cuts payload and parse time. Set SENTRY_* or
-    // vendored `.map` files are not needed for pure-static hosting.
+    // disabling sourcemaps cuts payload and parse time.
     sourcemap: false,
     cssCodeSplit: true,
     minify: "esbuild",
