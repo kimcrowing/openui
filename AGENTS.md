@@ -48,6 +48,7 @@ overlay 仓库，CI 从上游 clone 后合并覆盖构建部署到 GitHub Pages 
 | `src/router/prefixed-router.tsx` | **V2 化专用 Router**：不给 solid-router 传 base，`createRouter` integration 在 history 边界做前缀转换（get 剥 / set 加 `/openui`） | 见第四节根因实证 |
 | `src/entry.tsx` | SW 注册 `import.meta.env.BASE_URL + "sw.js"` + `.catch(()=>{})` | 本部署无 SW，防 404 unhandled rejection |
 | `src/runtime/platform/web.ts` | `getCurrentServerUrl()` 优先 `VITE_DEFAULT_SERVER_URL` | 官方生产回退 `location.origin`（部署站自身），静态部署必须注入真实 API 地址 |
+| `src/runtime/i18n/zh.ts` | **完整覆盖**（基于 v2 分支基线，补全 241 个缺失 key 的中文翻译） | 设置页等大量汉化不全；overlay 是整文件覆盖，上游更新 en.ts 后需重新 diff 对齐 |
 
 - **历史教训：曾给 `<Router base>` 传 vite base 导致线上 ErrorBoundary（2026-09-08 修复，见第四节）。
   正确方案是 history 边界转换，不是 base prop。**
@@ -94,3 +95,14 @@ overlay 仓库，CI 从上游 clone 后合并覆盖构建部署到 GitHub Pages 
 - Pages 地址：`https://kimcrowing.github.io/openui/`（VITE_DEFAULT_SERVER_URL → 本机 dynv6 opencode2）。
 - CI 触发：push `webui-src/**` 或 workflow 文件；也可 workflow_dispatch 指定 `upstream_ref`。
 - 缓存 key：`${{ runner.os }}-bun-v2-${{ env.UPSTREAM_REF }}-${{ hashFiles('webui-src/**') }}`。
+
+- **中文 i18n 补齐（2026-09-08 交付，commit `e63d73b`，CI run `34180037808` success）**：
+  - 基线对照法：`en.ts`（1219 key）vs `zh.ts`（1068 key）差 241 个缺失 key → 全部补齐。
+  - 校验手段（本机 node+typescript@5.6）：`ts.transpileModule` 语法通过；无重复 key；
+    所有 `{{变量}}` 插值与 en.ts 一一对应（自动脚本核对，0 不一致）。
+  - **验证要点（chromium headless，必须 `--lang=zh-CN --accept-lang=zh-CN,zh`）**：
+    不传语言参数时 `navigator.language` 恒为 en-US，UI 全英文——这是**语言检测**问题不是翻译缺失！
+    桌面视口（`--window-size=1400,900`）下设置侧栏 12 个 tab（偏好/外观/通知/快捷键/服务器/项目/
+    工作树/提供商/模型/扩展/实验功能/关于）全部中文；工作树/通知/关于子页正文全部中文。
+  - 侧栏"只剩 2 项"是**小视口触发布局切换**（桌面侧栏 CSS 隐藏、只剩移动导航）的假象，非翻译问题。
+  - overlay 是整文件覆盖：上游更新 en.ts 后需重跑 diff 补全。
