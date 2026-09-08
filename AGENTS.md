@@ -44,16 +44,42 @@ overlay 仓库，CI 从上游 clone 后合并覆盖构建部署到 GitHub Pages 
 | `vite.config.ts` | `base: process.env.VITE_BASE ?? "/"`；`sourcemap:false`；**移除 serviceWorker(vite.pwa) 插件** | 上游 SW `navigateFallback` 根路径锚定，子路径下破坏刷新；SPA 交给 404.html |
 | `vite.icons.ts` | 所有 URL 加 `VITE_BASE` 前缀（favicon/apple-touch/manifest icons + start_url/scope/id）；transformIndexHtml 里 `replaceAll("%BASE%", base)` | 根路径锚定资源子路径 404；**vite 8 实测不替换 html 里的 %BASE%**（%OPENCODE_* 由本插件替换） |
 | `index.html` | manifest/og 用 `%BASE%` 占位（由 vite.icons.ts 替换） | 同 v2 index.html 其余不动 |
-| `src/app.tsx` | 默认 Router 注入 `base={import.meta.env.BASE_URL}`（PrefixedRouter，router prop 仍可覆盖） | 子路径 history 路由 |
+| `src/app.tsx` | 默认 Router 用 `PrefixedRouter`（`@/router/prefixed-router`，router prop 仍可覆盖） | 子路径 history 路由 |
+| `src/router/prefixed-router.tsx` | **V2 化专用 Router**：不给 solid-router 传 base，`createRouter` integration 在 history 边界做前缀转换（get 剥 / set 加 `/openui`） | 见第四节根因实证 |
 | `src/entry.tsx` | SW 注册 `import.meta.env.BASE_URL + "sw.js"` + `.catch(()=>{})` | 本部署无 SW，防 404 unhandled rejection |
 | `src/runtime/platform/web.ts` | `getCurrentServerUrl()` 优先 `VITE_DEFAULT_SERVER_URL` | 官方生产回退 `location.origin`（部署站自身），静态部署必须注入真实 API 地址 |
 
-- 曾用 dev 基线的旧文件已删除：`src/components/titlebar.tsx`、`src/index.css`、`src/router/prefixed-router.tsx`。
+- **历史教训：曾给 `<Router base>` 传 vite base 导致线上 ErrorBoundary（2026-09-08 修复，见第四节）。
+  正确方案是 history 边界转换，不是 base prop。**
+- 曾用 dev 基线的旧文件已删除：`src/components/titlebar.tsx`、`src/index.css`、`webui-src/packages/app/src/router/prefixed-router.tsx`
+  （dev 线 solid-router 0.x 版）。V2 线的 `src/router/prefixed-router.tsx` 是 2026-09-08 新建（solid-router 1.0.0 API）。
 - 本地工作分支 `upgrade-v2`（推送目标 `origin main`；**push 必须 `git push origin upgrade-v2:main`**，
   本地 `main` 引用可能陈旧——见全局 AGENTS.md 的 git 分支事故教训）。
 
 ## 四、关键坑（实测）
 
+- **子路径部署绝对禁止给 solid-router 传 `base` prop（2026-09-08 实证）**：
+  - solid-router 1.0.0 的 `base` 只把前缀拼进 route pattern（匹配/导航），**不会从
+    `useLocation().pathname` 剥离前缀** → `location.pathname` 带 `/openui`。
+  - 应用代码用精确比较解析 pathname：`shell/state/layout.tsx` 的 `currentRoute()`
+    （`parts[0] === "settings"/"new-session"/"server"`）→ `parts[0]="openui"` 全部落空 →
+    抛 Unrecognised route → SettingsSurface `layout.route().type`（无 `??` 兜底）→
+    `TypeError: Cannot read properties of undefined (reading 'type')` → ErrorBoundary。
+  - 实证链：① 线上 Error Details（textarea）堆栈 `surface-*.js active` →
+    ② 反混淆定位 `settings/surface.tsx` `open = () => layout.route().type === "settings"` →
+    ③ 本地同 dist 对照实验（chromium headless）：serve 在 `/openui/` 报错、去掉前缀 serve 在根路径正常 →
+    ④ solid-router 1.0.0 官方源码（npm tarball dist/routing.js `createRouterContext`）确认 base 不进 location。
+  - **修复（`src/router/prefixed-router.tsx`）**：不给 Router 传 base（内部路径保持干净），
+    `createRouter({get,set,init,create,utils})` integration 在 history 边界转换——
+    `get()`（初始/popstate）剥 `BASE_ROOT` 前缀、`set()`（push/replaceState）加回前缀；
+    anchor 点击按官方 `setupNativeEvents` 语义复刻（同源/无修饰键/download/external 过滤，
+    未从包导出故手写）。官方 `createRouter` 组件 API：`createRouter(config)` 返回组件接收
+    `BaseRouterProps`（root/children…）；`utils:{go,beforeLeave}`；`navigatorFactory(router.base)`。
+  - 验证（线上实测通过）：首页渲染 `Projects/Add project/Loading/Settings/Help`；直接加载
+    `/openui/settings`（404.html 兜底 + stripBase）；点击侧栏 Settings → URL 写回 `/openui/settings`
+    （addBase）；全程无 ErrorBoundary。
+  - 对照本机官方 opencode2（localhost:4096，base="/"）渲染一致。
+  - commit `53ddcdd`（upgrade-v2 → origin main），CI run `34178941398` success。
 - **vite 8（rolldown）html 里 `%BASE%` 不会自动替换**（vite 7 行为？未知）：需在 transformIndexHtml
   插件手动 `replaceAll("%BASE%", base)`。
 - vite build 传 `base=/openui/` 后：`assetsDir:"_assets"` 产物在 `/openui/_assets/`，
