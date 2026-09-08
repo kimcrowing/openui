@@ -53,6 +53,9 @@ export function icons(channel: string): Plugin {
         return html
           .replace("%OPENCODE_FAVICON%", `${base}${prefix}/favicon.ico`)
           .replace("%OPENCODE_APPLE_TOUCH_ICON%", `${base}${prefix}/apple-touch-icon.png`)
+          // vite 的 html %VAR% 替换不处理 index.html 中的 %BASE%（vite 8 实测未替换），
+          // 这里手动把 %BASE%（manifest/og 链接占位）替换为部署 base。
+          .replaceAll("%BASE%", base)
       },
     },
   }
