@@ -4,7 +4,7 @@ import { FileComponentProvider } from "@opencode/ui/context/file"
 import { Font } from "@opencode/ui/font"
 import { ThemeProvider } from "@opencode/ui/theme/context"
 import { MetaProvider } from "@solidjs/meta"
-import { type BaseRouterProps, Router } from "@solidjs/router"
+import { type BaseRouterProps } from "@solidjs/router"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import { type Component, createRenderEffect, ErrorBoundary, type JSX, type ParentProps } from "solid-js"
 import { Dynamic } from "solid-js/web"
@@ -17,6 +17,7 @@ import { ServerConnection, ServersProvider } from "@/runtime/server/registry"
 import { SettingsProvider } from "@/settings/model"
 import { TabsProvider } from "@/shell/tabs/tabs"
 import { WslServersProvider } from "@/servers/wsl/context"
+import { PrefixedRouter } from "@/router/prefixed-router"
 import { ErrorPage } from "@/shell/errors/error"
 import { AppRoutes, File, preloadRoute } from "@/shell/routes/routes"
 
@@ -93,11 +94,10 @@ export function AppBaseProviders(
   )
 }
 
-// 子路径部署（GitHub Pages /openui/）：默认 Router 带上 vite base（import.meta.env.BASE_URL），
-// 使所有 Route 路径自动加上部署前缀；调用方仍可通过 AppInterface 的 router prop 覆盖。
-function PrefixedRouter(props: BaseRouterProps) {
-  return <Router {...props} base={import.meta.env.BASE_URL} />
-}
+// 子路径部署（GitHub Pages /openui/）：默认 Router 用 PrefixedRouter —— 内部路径保持
+// 干净（不给 solid-router 传 base，避免 location.pathname 带前缀破坏官方精确比较），
+// 只在 history 边界做 /openui 前缀转换（见 src/router/prefixed-router.tsx）。
+// 调用方仍可通过 AppInterface 的 router prop 覆盖。
 
 export function AppInterface(props: {
   children?: JSX.Element
