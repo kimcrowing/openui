@@ -3,7 +3,8 @@
 基于 **官方 opencode V2 web UI（上游 `anomalyco/opencode` `dev` 分支的 `packages/app`）** 的定制覆盖层：
 保持官方 V2 布局不变，做最小必要适配，解决 **GitHub Pages 静态部署（子路径 `/openui/`）** 的独有痛点。
 
-- 源码基线：上游 `dev` 分支（已完成 `/api/*` V2 HTTP 接口迁移的官方 web UI，纯静态 `dist/` 产物）。
+- 源码基线：上游 `dev` 分支（官方 V2 web UI，纯静态 `dist/` 产物）。
+  - **更正（2026-09-08，实测）**：V2 服务端（本机 `opencode2 serve :4096` 实测）HTTP API 为**根路径风格**——`/session`、`/config`、`/event`、`/health` 均返回 200（无 `/api` 前缀）；`/api/*` 仅用于 control / 集成 / 权限等少量端点（v2 SDK `sdk.gen.ts` 中 `/api/session`、`/api/pty`、`/api/credential` 等就是这类）。曾误写为「已完成 `/api/*` V2 HTTP 接口迁移」，已更正。
 - 本仓库 `webui-src/packages/app/` **只保留覆盖文件**，完整 `packages/app` 由 CI 从上游 clone。
 - 构建与发布：**GitHub Actions**（无需本机安装 bun / node）。
 - 产物地址：`https://kimcrowing.github.io/openui/`
