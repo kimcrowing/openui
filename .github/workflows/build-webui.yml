@@ -1,11 +1,15 @@
 name: Build & Deploy OpenCode Web UI
 
-# 基于官方 opencode packages/app（上游 dev 分支 = V2 版 web UI）构建。
+# 基于官方 opencode packages/app（上游 v2 分支 = V2 版 web UI，vite 8.x/rolldown）。
 # webui-src/packages/app 只保留本仓库的 overlay 覆盖文件（vite.config、
-# entry.tsx / prefixed-router / titlebar / index.css），CI 把上游 dev 的完整
-# packages/app clone 下来作为基线，再用这些文件合并覆盖（不删除上游文件）。
-# 产出分发到 GitHub Pages（子路径 /openui/ 部署，VITE_BASE 处理资产路径，
-# SPA fallback: dist/index.html 复制为 404.html 以便 history 路由刷新可加载）。
+# vite.icons / index.html / entry.tsx / app.tsx / platform/web.ts），CI 把上游
+# v2 分支的完整 packages/app clone 下来作为基线，再用这些文件合并覆盖
+# （不删除上游文件）。产出分发到 GitHub Pages（子路径 /openui/ 部署，
+# VITE_BASE 处理资产路径，SPA fallback: dist/index.html 复制为 404.html 以便
+# history 路由刷新可加载）。
+# 历史：此前误用 dev 分支（V1 线，vite 7/rollup）导致 UI 非 V2 形态；
+# v2 分支 packages/app 用 vite 8.2.2（rolldown 后端，_assets 多 chunk）才是
+# 官方 V2 真身（与本机 opencode2 内嵌 UI 一致）。
 
 on:
   push:
@@ -18,7 +22,7 @@ on:
       upstream_ref:
         description: 'Upstream opencode ref to base on (branch / tag / commit SHA)'
         required: false
-        default: 'dev'
+        default: 'v2'
 
 concurrency:
   group: webui-build
@@ -30,7 +34,7 @@ permissions:
   id-token: write
 
 env:
-  UPSTREAM_REF: ${{ github.event.inputs.upstream_ref || 'dev' }}
+  UPSTREAM_REF: ${{ github.event.inputs.upstream_ref || 'v2' }}
   VITE_BASE: '/openui/'
   VITE_DEFAULT_SERVER_URL: 'https://kimcrowing.dynv6.net:14096'
 
@@ -49,7 +53,7 @@ jobs:
 
       - name: Clone upstream opencode
         run: |
-          # Default clone (HEAD = dev), then fetch the requested ref so a branch,
+          # Default clone (HEAD = v2), then fetch the requested ref so a branch,
           # tag or commit SHA all work. Shallow, single ref.
           git clone --depth 1 https://github.com/anomalyco/opencode.git "$RUNNER_TEMP/upstream"
           cd "$RUNNER_TEMP/upstream"
@@ -69,9 +73,12 @@ jobs:
           find "$GITHUB_WORKSPACE/repo/webui-src/packages/app" -type f | sed "s|$GITHUB_WORKSPACE/repo/webui-src/packages/app/||" | sort
           echo "== sanity checks =="
           test -f "$APP/src/index.css" && echo "index.css ok" || (echo "index.css MISSING"; exit 1)
-          test -f "$APP/src/router/prefixed-router.tsx" && echo "prefixed-router ok" || (echo "prefixed-router MISSING"; exit 1)
+          test -f "$APP/src/app.tsx" && echo "app.tsx ok" || (echo "app.tsx MISSING"; exit 1)
+          test -f "$APP/src/runtime/platform/web.ts" && echo "platform/web.ts ok" || (echo "platform/web.ts MISSING"; exit 1)
           test -f "$APP/package.json" && echo "upstream package.json ok" || (echo "upstream package.json MISSING"; exit 1)
-          test -f "$APP/vendor/opencode-ai-client-1.17.13-v2.tgz" && echo "vendor tgz ok" || (echo "vendor tgz MISSING (upstream changed?)"; ls "$APP/vendor" 2>/dev/null || true)
+          # v2 分支是 workspace monorepo：@opencode/ui、@opencode/client 等由 packages/ 提供
+          test -f "$APP/vite.pwa.ts" && echo "vite.pwa.ts ok (upstream)" || (echo "vite.pwa.ts MISSING"; exit 1)
+          test -f "$(dirname $(dirname "$APP"))/client/package.json" && echo "@opencode/client workspace ok" || (echo "@opencode/client workspace MISSING (upstream structure changed?)"; ls "$(dirname $(dirname "$APP"))" 2>/dev/null || true)
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
