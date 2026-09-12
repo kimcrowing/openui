@@ -106,3 +106,18 @@ overlay 仓库，CI 从上游 clone 后合并覆盖构建部署到 GitHub Pages 
     工作树/提供商/模型/扩展/实验功能/关于）全部中文；工作树/通知/关于子页正文全部中文。
   - 侧栏"只剩 2 项"是**小视口触发布局切换**（桌面侧栏 CSS 隐藏、只剩移动导航）的假象，非翻译问题。
   - overlay 是整文件覆盖：上游更新 en.ts 后需重跑 diff 补全。
+
+- **添加服务器常见疑问（2026-09-12 实测闭环）**：
+  - **"只有密码没有账号"是官方设计**：opencode V2 服务器认证 = HTTP Basic auth，
+    用户名固定 `opencode`（客户端 `authTokenFromCredentials` 生成 `btoa("opencode:"+password)`），
+    **密码 = 服务器的 `OPENCODE_SERVER_PASSWORD`**（本机 start-opencode2.sh 默认 `www`）。
+    所以添加服务器对话框只有 URL/名称/密码三栏，无账号栏，属正常。
+  - **"无法连接服务器"根因 = 密码未填或填错**：添加时必须通过健康检查
+    `GET /api/health`（Basic auth，客户端会重试 2 次）。不填/填错 → **401** →
+    "无法连接到服务器"；填对 → 200 `{"healthy":true,"version":...}` → 添加成功。
+  - **注意 UI 标注"密码（可选）"是误导**：dynv6 服务器要求认证，不填必失败。
+  - 真实添加参数：URL `https://kimcrowing.dynv6.net:14096` + 密码 `www`。
+  - 线上实测（chromium headless，`--lang=zh-CN`）：设置→服务器→添加服务器，
+    不填密码报"无法连接到服务器"，填 `www` 成功并显示 `v0.0.0--33`（健康通过才有版本号）。
+  - 健康检查端点是 **`/api/health`**（不是 `/health`；后者被 SPA fallback 返回 HTML index，
+    `/doc` 同理。opencode 服务器全部 API 路径见 `opencode-openapi.json` 或 `GET /doc?`）。
